@@ -40,8 +40,10 @@ Ask whether the function reads or writes file *content* in a specific domain:
 
 - **Yes** - it belongs in that domain's `vault-xxx.ps1` file. Example: parsing a frontmatter
     fence, reading or writing a frontmatter field, and a date-recovery chain whose first step checks an existing frontmatter value all belong in `vault-frontmatter.ps1`.
-- **No** - it is generic filesystem, path, string, or git-plumbing logic with no dependency on a
+- **No** - it is generic filesystem, path, or string logic with no dependency on a
     content domain, even if its only caller today happens to be a domain-scoped helper. It belongs in `vault-common.ps1`. Example: extracting a date from a filename, normalizing a path for comparison, and testing whether a file is a folder note by its position on disk are all content-independent and belong in `vault-common.ps1`, not the domain file that calls them.
+
+Git-plumbing logic (pull/push/commit orchestration, merge-conflict handling, branch state) is not pre-classified into `vault-common.ps1` by default - it's substantial enough to warrant its own topic-scoped `vault-git.ps1` once a second skill actually needs it, per "Extract, Do Not Duplicate" below. Until then it stays local to the one skill using it (e.g. `vault-sync`'s scripts), since promoting it speculatively for a single consumer is the premature abstraction this section is trying to avoid elsewhere.
 
 ### Extract, Do Not Duplicate
 

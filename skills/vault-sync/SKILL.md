@@ -5,63 +5,38 @@ description: Sync the vault git repository — commit local changes, pull from r
 
 # Vault Sync
 
-The goal is to get local and remote in agreement: commit anything local first, then pull, resolve any conflicts, then push.
+Goal: commit local changes, pull, resolve conflicts, push — so local and remote agree.
+
+Every step below calls `.claude/skills/vault-sync/scripts/vault-sync.ps1 -Action <Name> -Path <repo>` (`.` for the vault root, `.claude` for the submodule). Non-zero exit: stop, report the error verbatim — don't fall back to raw `git` or filesystem edits.
 
 ## Steps
 
-### 0. Sync the submodule first
-`.claude/` is a git submodule (`vault-backend`) with its own remote, separate from the vault root. It normally sits in **detached HEAD** — any `git submodule update --init` (run by the SessionStart hook whenever a pull moves the pointer, and by `git submodule update` generally) checks out the pinned commit directly rather than a branch, even though a fresh `submodule add` leaves it attached to one.
+### 0. Submodule first
+`-Action Status -Path .claude`:
+- `Detached: True` → `-Action Reattach -Path .claude -Branch <default-branch>` (currently `master`). Non-zero exit means it conflicts with the branch tip — stop and resolve by hand.
+- `MidMerge: True` → a prior run was interrupted; finish step 3 for those files first.
 
-Before running steps 1-4 against `.claude/`:
-- Check `git -C .claude symbolic-ref -q HEAD`. Empty output means detached HEAD.
-- If detached, reattach first: `git -C .claude checkout <default-branch>` (currently `master` — confirm with `git -C .claude remote show origin` if unsure). This is a plain checkout, not a reset, so any uncommitted `.claude/` edits made while detached carry over onto the branch. If the checkout refuses because those edits conflict with the branch tip, stop and resolve that by hand before continuing — don't force it.
+Then run steps 1-4 against `.claude/` exactly as below, before the vault root — its moved submodule pointer then shows up in step 1 as an ordinary change to commit.
 
-Once HEAD is attached to a branch, run steps 1-4 below against `.claude/` exactly as you would for the vault itself — commit local `.claude/` changes, pull, resolve conflicts, push. Then return to the vault root and continue with step 1, where `git status` will show the submodule's updated commit pointer as an ordinary change to commit alongside anything else.
-
-### 1. Check local state
-Run `git status` to see if there are uncommitted local changes.
-
-- If there are changes, stage them and commit before pulling. Write the commit message per "Commit messages" below.
-- If there's nothing to commit, skip straight to the pull.
+### 1. Local state
+`-Action Status -Path .`. Uncommitted files → `-Action Stage`, then commit (see "Commit messages"). Nothing to commit → step 2.
 
 ### 2. Pull
-Run `git pull`. This brings in any remote changes.
-
-- If it succeeds cleanly, move on to step 4.
-- If it reports conflicts, handle them in step 3.
+`-Action Pull -Path .`, check `PullStatus`:
+- `UpToDate` / `FastForward` / `MergedClean` → step 4.
+- `MergedConflicts` → `ConflictedFiles` lists what to resolve in step 3.
+- `FailedNetwork` / `FailedOther` → stop, report the raw output.
 
 ### 3. Resolve conflicts
-For each conflicted file, read both versions and decide: is this conflict trivial or non-trivial?
+For each conflicted file, read both versions and judge:
+- **Trivial** (compatible intent — additive, whitespace, one side a subset): merge by hand into one file, replacing the conflict markers. Tell the user what you merged and why.
+- **Non-trivial** (genuinely different choices, or unclear intent): `-Action SaveConflictVersion -Path . -ConflictFile <relpath>` — keeps the local version, saves the remote version as a sibling `[CONFLICT ...]` file. Tell the user a conflict file was created and what differs.
 
-**Trivial** — the intent of both sides is clear and compatible (e.g. one side adds something the other doesn't touch, whitespace differences, one side is a subset of the other):
-- Merge both sides into a single coherent file and save it.
-- Tell the user what you merged and why you considered it trivial.
-
-**Non-trivial** — the two versions make meaningfully different choices that can't both be kept, or the intent of either side is unclear:
-- Keep the local version as-is (Obsidian's edit wins).
-- Save the remote version as a new file alongside the original, named: `Filename [CONFLICT YYYYMMDD HHMM].md` — use the current date and time.
-- Tell the user a conflict file was created and briefly describe what differs.
-
-After resolving all conflicts, stage and commit. Write the summary line per "Commit messages" below, and if there were any conflict files created, list them in the commit body:
-```
-<summary line>
-
-Auto-resolved: path/to/File.md
-Conflict file: path/to/File [CONFLICT 20260612 1430].md
-
-Generated-by: vault-sync
-```
+Then `-Action Stage -Path .` and commit (see "Commit messages"). For each non-trivial resolution, pass `-ExtraBody "Auto-resolved: <path>", "Conflict file: <path>"`.
 
 ### 4. Push
-Run `git push` to send everything to the remote.
-
-Report the outcome — what was committed (including the full text of each generated commit message), whether any conflicts came up, and that the push succeeded.
+`-Action Push -Path .`. Report what was committed, any conflicts, and the push result.
 
 ## Commit messages
 
-Before each commit, read `git diff --cached` for the staged changes and write a short, imperative summary line describing what changed (e.g. `Update Skill-Audit-System corpus and archive stale idea doc`). If the diff is too large to read usefully (many files or a large rewrite), fall back to summarizing `git diff --cached --stat` instead of reading every hunk.
-
-Append a trailer to every commit body noting it was generated by this skill:
-```
-Generated-by: vault-sync
-```
+Read `git diff --cached` (or its `--stat` for a large diff — `-Action Stage` prints this) and write a short, imperative summary line. Commit with `-Action Commit -Path <repo> -Message <summary>` — the `Generated-by: vault-sync` trailer is added automatically.

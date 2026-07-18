@@ -1,0 +1,45 @@
+{
+  "skill_name": "vault-doc-rename",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "The vault contains one file named Alpha.md at Areas/Personal/Vault/Inbox/Alpha.md. It is referenced by [[Alpha]] in two other files. User says: 'Rename Alpha to Beta.'",
+      "expected_output": "Agent globs vault-wide and resolves 'Alpha' to Areas/Personal/Vault/Inbox/Alpha.md. NewPath is Areas/Personal/Vault/Inbox/Beta.md (same folder, .md extension added). Agent runs the script in report mode and shows the user the two wikilinks that would be updated. Agent asks for confirmation before applying. After the user confirms, agent runs the script with -Update, then reports: file renamed and 2 wikilinks updated in 2 files."
+    },
+    {
+      "id": 2,
+      "prompt": "The vault contains two files both named Alpha.md: one at Areas/Personal/Vault/Inbox/Alpha.md and one at Projects/Personal/SideProject/Inbox/Alpha.md. User says: 'Rename Alpha to Beta.'",
+      "expected_output": "Agent globs vault-wide and finds two files with basename Alpha. Agent lists both paths and asks the user which one to rename before proceeding. Agent does not guess or pick one arbitrarily. After the user selects one, agent continues with path resolution and the normal report → confirm → apply flow."
+    },
+    {
+      "id": 3,
+      "prompt": "The vault contains Areas/Personal/Vault/Inbox/Long-Verbose-Plan-Name.md. User says: 'Rename Long-Verbose-Plan-Name to Short-Name' (no .md extension on either name).",
+      "expected_output": "Agent resolves 'Long-Verbose-Plan-Name' to Areas/Personal/Vault/Inbox/Long-Verbose-Plan-Name.md. Agent infers NewPath as Areas/Personal/Vault/Inbox/Short-Name.md — same folder as OldPath, .md extension added. Agent does not ask the user to re-specify with an extension."
+    },
+    {
+      "id": 4,
+      "prompt": "The vault contains Areas/Personal/Vault/Inbox/Alpha.md. User says: 'Move Alpha to Projects/Personal/SideProject/Inbox/Alpha.md' (full destination path given, same basename).",
+      "expected_output": "Agent uses the user-supplied full path as NewPath directly without modification. Because the basename is unchanged (Alpha → Alpha), agent notes this is a pure folder move and the script will skip the wikilink update pass. Agent still shows the report and confirms before applying. If Projects/Personal/SideProject/Inbox/ does not exist, the script creates it automatically."
+    },
+    {
+      "id": 5,
+      "prompt": "The vault contains Areas/Personal/Vault/Inbox/Alpha.md. Two other files both contain the bare link [[Alpha]]. Additionally, a third file contains the path-qualified link [[Areas/Personal/Vault/Inbox/Alpha]]. There is also a completely separate file at Resources/Software/Alpha.md (same basename, different area). User says: 'Rename Alpha in the Vault Inbox folder to Beta.'",
+      "expected_output": "Agent resolves OldPath to Areas/Personal/Vault/Inbox/Alpha.md (user specified the folder context, removing ambiguity). The script detects that another file shares the basename Alpha (Resources/Software/Alpha.md) and flags the rename as ambiguous. In the report, the two bare [[Alpha]] links are marked as skipped (ambiguous) and the path-qualified link is marked for update. Agent highlights the skipped links to the user so they know those two files will need manual review after the rename. Agent asks for confirmation before applying."
+    },
+    {
+      "id": 6,
+      "prompt": "The vault contains Areas/Personal/Vault/Inbox/Alpha.md with no other files referencing it. User says: 'Rename Alpha.md to Nonexistent-Folder/Beta.md' where Nonexistent-Folder does not yet exist.",
+      "expected_output": "Agent uses Nonexistent-Folder/Beta.md as the NewPath, resolving it relative to the vault root. Report shows no wikilinks to update. After the user confirms, the script creates the destination folder automatically and moves the file. Agent reports the file was renamed and the folder was created."
+    },
+    {
+      "id": 7,
+      "prompt": "User says: 'Rename Doesnt-Exist to Something-Else.' No file named Doesnt-Exist.md exists anywhere in the vault.",
+      "expected_output": "Agent globs vault-wide and finds no file matching the basename. Agent reports that no file named Doesnt-Exist.md was found in the vault and asks the user to check the name. Agent does not proceed to run the script."
+    },
+    {
+      "id": 8,
+      "prompt": "vault-doc-archive calls vault-doc-rename programmatically with fully-resolved OldPath 'Areas/Personal/Vault/Inbox/Plan-Alpha.md' and NewPath 'Areas/Personal/Vault/Archive/2026-06-20-Plan-Alpha.md'.",
+      "expected_output": "Agent skips path resolution and confirmation entirely (programmatic entry point). Agent runs the script in report mode to surface any skipped wikilinks, then immediately runs with -Update without asking the user. Agent returns the summary (file renamed + N wikilinks updated + K skipped) to the calling skill."
+    }
+  ]
+}

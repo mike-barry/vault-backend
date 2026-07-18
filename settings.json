@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:forum.obsidian.md)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "OUT=$(git pull --ff-only 2>&1); STATUS=$?; if [ $STATUS -eq 0 ]; then exit 0; fi; if printf '%s' \"$OUT\" | grep -q 'Not possible to fast-forward'; then printf '[Automated SessionStart hook output, not from the user] git pull --ff-only failed at session start: local and remote history have diverged (likely unpushed local commits alongside new remote commits). Working tree was left untouched - nothing merged, nothing conflicted. Mention this to the user early in your reply; do not merge, sync, commit, or push on your own without them asking.\\n'; else printf '[Automated SessionStart hook output, not from the user] git pull --ff-only failed at session start (not a divergence issue): %s\\nWorking tree left untouched. Likely a connectivity or auth issue - mention it to the user if relevant.\\n' \"$OUT\"; fi",
+            "statusMessage": "Pulling latest vault changes..."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -9,6 +9,15 @@ The goal is to get local and remote in agreement: commit anything local first, t
 
 ## Steps
 
+### 0. Sync the submodule first
+`.claude/` is a git submodule (`vault-backend`) with its own remote, separate from the vault root. It normally sits in **detached HEAD** — any `git submodule update --init` (run by the SessionStart hook whenever a pull moves the pointer, and by `git submodule update` generally) checks out the pinned commit directly rather than a branch, even though a fresh `submodule add` leaves it attached to one.
+
+Before running steps 1-4 against `.claude/`:
+- Check `git -C .claude symbolic-ref -q HEAD`. Empty output means detached HEAD.
+- If detached, reattach first: `git -C .claude checkout <default-branch>` (currently `master` — confirm with `git -C .claude remote show origin` if unsure). This is a plain checkout, not a reset, so any uncommitted `.claude/` edits made while detached carry over onto the branch. If the checkout refuses because those edits conflict with the branch tip, stop and resolve that by hand before continuing — don't force it.
+
+Once HEAD is attached to a branch, run steps 1-4 below against `.claude/` exactly as you would for the vault itself — commit local `.claude/` changes, pull, resolve conflicts, push. Then return to the vault root and continue with step 1, where `git status` will show the submodule's updated commit pointer as an ordinary change to commit alongside anything else.
+
 ### 1. Check local state
 Run `git status` to see if there are uncommitted local changes.
 

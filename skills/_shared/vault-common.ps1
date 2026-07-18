@@ -23,7 +23,11 @@ function Get-VaultRoot {
     }
     $dir = [System.IO.DirectoryInfo]::new((Resolve-Path $StartPath).Path)
     while ($null -ne $dir) {
-        if (Test-Path (Join-Path $dir.FullName '.git')) {
+        # -PathType Container excludes a submodule's .git, which is a *file* (a gitlink
+        # pointing at the parent's .git/modules/<name>), not a directory. Without this, the
+        # walk-up stops at .claude/ (the vault-backend submodule) instead of continuing to the
+        # real vault root above it.
+        if (Test-Path (Join-Path $dir.FullName '.git') -PathType Container) {
             return $dir.FullName.TrimEnd('\') + '\'
         }
         $dir = $dir.Parent

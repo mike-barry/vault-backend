@@ -19,9 +19,10 @@ Read the target skill's `SKILL.md` in full. Read any co-located files it referen
 
 ## Axis 1: Visibility
 
-- **High-risk side effects** (writes/moves/deletes files, commits, pushes, sends messages, calls external APIs) → check whether `disable-model-invocation: true` is set. If it's missing, flag it as a candidate.
+- **Manual-only skills** - meant to fire *only* on explicit invocation (a slash command, or a direct "run X"), never inferred from plain conversation → check whether `disable-model-invocation: true` is set. Flag if missing. Judge this from the skill's own description and intended trigger phrasing, not from risk level - a skill can have high-risk side effects and still be meant to fire on a plain-language request (e.g. `vault-sync` on "sync the vault").
+- **High-risk, request-triggerable skills** (writes/moves/deletes files, commits, pushes, sends messages, calls external APIs, but meant to respond to plain-language requests) → do not suggest `disable-model-invocation`, since that would block the plain-language trigger. Instead check the skill body for a confirmation step before the irreversible action (a preview → confirm → apply flow, or an explicit "ask before applying"). Flag its absence as a missing confirmation gate.
 - **Pure background knowledge** the user would never `/run` directly (e.g. a skill only ever invoked programmatically by other skills) → check whether `user-invocable: false` is set. Flag if missing.
-- Don't flag a skill that already carries the appropriate frontmatter. If it's unclear whether a side effect is "high-risk" or a skill is genuinely user-facing, ask rather than assume.
+- Don't flag a skill that already carries the appropriate frontmatter or already has a confirmation step in place. If it's unclear whether a skill is manual-only vs. request-triggerable, or whether a side effect needs a confirmation gate, ask rather than assume.
 
 ## Axis 2: Deterministic vs Non-Deterministic
 
@@ -70,6 +71,7 @@ Present findings grouped by axis. For each finding, give the specific location (
 Ask whether to apply the findings. Handle each kind differently:
 
 - **Frontmatter changes** (Axis 1) — low-risk, edit directly once confirmed.
+- **Confirmation-gate additions** (Axis 1) — a small in-place edit to the skill body (an explicit confirm-before-applying step); edit directly once confirmed, same as frontmatter changes, unless it requires restructuring the flow into a preview/confirm/apply shape, in which case treat it as script/hand-off work needing scope confirmation.
 - **Script extraction / hand-off changes** (Axis 2, Axis 3) — real implementation work; confirm scope with the user before writing any code, since a new script needs testing.
 
 Before applying anything beyond a minor edit (a single frontmatter field, a small in-place tweak), offer to spin the proposed changes into a planning doc via the `vault-docs` skill instead of just diving in — this covers multi-step script extractions, new `_shared` files, or anything touched by the cross-skill sweep. Let the user choose: plan it first, or proceed directly.

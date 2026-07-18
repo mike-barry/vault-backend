@@ -23,7 +23,7 @@ Never hard-wrap prose lines in SKILL.md files - see [[Document-Conventions]].
 
 `name` and `description` are required on every `SKILL.md`. Two optional fields control visibility, checked by `vault-skill-audit`:
 
-- **`disable-model-invocation: true`** - the model can never auto-fire this skill; it only runs via explicit user invocation. Use for skills with high-risk side effects (writes, commits, pushes, external calls) or ones meant to be user-invoked only. Also keeps the skill out of the always-loaded skill listing in every conversation's context, since the model no longer needs to see it to decide whether to invoke it.
+- **`disable-model-invocation: true`** - the model can never auto-fire this skill; it only runs via explicit invocation (a slash command, or a direct "run X"). Reserve for skills meant to be triggered *only* that way, regardless of risk - not a stand-in for "this is risky." A high-risk but request-triggerable skill (e.g. `vault-sync` firing on "sync the vault") should stay model-invocable and instead confirm with the user before its irreversible step, same as the harness's own explicit-permission rules. Also keeps the skill out of the always-loaded skill listing in every conversation's context, since the model no longer needs to see it to decide whether to invoke it.
 - **`user-invocable: false`** - hides the skill from `/menu`. Use for skills that are pure background knowledge or programmatic-only building blocks a user would never `/run` directly (e.g. logic another skill hands off to).
 
 ## Naming Convention

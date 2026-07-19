@@ -4,17 +4,17 @@
     {
       "id": 1,
       "prompt": "The vault contains one file named Alpha.md at Areas/Personal/Vault/Inbox/Alpha.md. It is referenced by [[Alpha]] in two other files. User says: 'Rename Alpha to Beta.'",
-      "expected_output": "Agent presents the rename (Alpha -> Beta) to the user and asks for confirmation before applying — there is no itemized wikilink preview since the tool has no dry-run mode. After the user confirms, agent calls mcp__vault-mcp-server__rename_note with Note: 'Alpha', NewName: 'Beta'. Agent reports the tool's summary: file renamed and 2 wikilinks updated in 2 files."
+      "expected_output": "Agent presents the rename (Alpha -> Beta) to the user and asks for confirmation before applying — there is no itemized wikilink preview since the tool has no dry-run mode. After the user confirms, agent calls mcp__vault__rename_note with Note: 'Alpha', NewName: 'Beta'. Agent reports the tool's summary: file renamed and 2 wikilinks updated in 2 files."
     },
     {
       "id": 2,
       "prompt": "The vault contains two files both named Alpha.md: one at Areas/Personal/Vault/Inbox/Alpha.md and one at Projects/Personal/SideProject/Inbox/Alpha.md. User says: 'Rename Alpha to Beta.'",
-      "expected_output": "Agent confirms the rename intent with the user using 'Alpha' as given, then calls mcp__vault-mcp-server__rename_note with Note: 'Alpha', NewName: 'Beta'. The tool throws 'Ambiguous wikilink [[Alpha]]: Areas/Personal/Vault/Inbox/Alpha.md, Projects/Personal/SideProject/Inbox/Alpha.md'. Agent uses AskUserQuestion with the two listed paths as options rather than guessing. After the user selects one, agent retries the tool call with the chosen full path as Note."
+      "expected_output": "Agent confirms the rename intent with the user using 'Alpha' as given, then calls mcp__vault__rename_note with Note: 'Alpha', NewName: 'Beta'. The tool throws 'Ambiguous wikilink [[Alpha]]: Areas/Personal/Vault/Inbox/Alpha.md, Projects/Personal/SideProject/Inbox/Alpha.md'. Agent uses AskUserQuestion with the two listed paths as options rather than guessing. After the user selects one, agent retries the tool call with the chosen full path as Note."
     },
     {
       "id": 3,
       "prompt": "The vault contains Areas/Personal/Vault/Inbox/Long-Verbose-Plan-Name.md. User says: 'Rename Long-Verbose-Plan-Name to Short-Name' (no .md extension on either name).",
-      "expected_output": "Agent calls mcp__vault-mcp-server__rename_note with Note: 'Long-Verbose-Plan-Name', NewName: 'Short-Name'. The tool resolves Note to Areas/Personal/Vault/Inbox/Long-Verbose-Plan-Name.md and, since NewName is a bare name with no '/', keeps the renamed file in the same folder: Areas/Personal/Vault/Inbox/Short-Name.md, adding the .md extension itself. Agent does not ask the user to re-specify with an extension or a full path."
+      "expected_output": "Agent calls mcp__vault__rename_note with Note: 'Long-Verbose-Plan-Name', NewName: 'Short-Name'. The tool resolves Note to Areas/Personal/Vault/Inbox/Long-Verbose-Plan-Name.md and, since NewName is a bare name with no '/', keeps the renamed file in the same folder: Areas/Personal/Vault/Inbox/Short-Name.md, adding the .md extension itself. Agent does not ask the user to re-specify with an extension or a full path."
     },
     {
       "id": 4,
@@ -34,12 +34,12 @@
     {
       "id": 7,
       "prompt": "User says: 'Rename Doesnt-Exist to Something-Else.' No file named Doesnt-Exist.md exists anywhere in the vault.",
-      "expected_output": "Agent confirms the rename intent with the user, then calls mcp__vault-mcp-server__rename_note with Note: 'Doesnt-Exist', NewName: 'Something-Else'. The tool throws 'Note not found: Doesnt-Exist'. Agent stops and reports the error verbatim to the user rather than attempting a workaround (e.g. Move-Item or manual git commands)."
+      "expected_output": "Agent confirms the rename intent with the user, then calls mcp__vault__rename_note with Note: 'Doesnt-Exist', NewName: 'Something-Else'. The tool throws 'Note not found: Doesnt-Exist'. Agent stops and reports the error verbatim to the user rather than attempting a workaround (e.g. Move-Item or manual git commands)."
     },
     {
       "id": 8,
       "prompt": "vault-doc-archive calls vault-doc-rename programmatically with fully-resolved OldPath 'Areas/Personal/Vault/Inbox/Plan-Alpha.md' and NewPath 'Areas/Personal/Vault/Archive/2026-06-20-Plan-Alpha.md'.",
-      "expected_output": "Agent skips confirmation entirely (programmatic entry point). Agent calls mcp__vault-mcp-server__rename_note with Note: 'Areas/Personal/Vault/Inbox/Plan-Alpha.md', NewName: 'Areas/Personal/Vault/Archive/2026-06-20-Plan-Alpha.md' without asking the user. Agent returns the tool's summary (file renamed + N wikilinks updated + K skipped) to the calling skill."
+      "expected_output": "Agent skips confirmation entirely (programmatic entry point). Agent calls mcp__vault__rename_note with Note: 'Areas/Personal/Vault/Inbox/Plan-Alpha.md', NewName: 'Areas/Personal/Vault/Archive/2026-06-20-Plan-Alpha.md' without asking the user. Agent returns the tool's summary (file renamed + N wikilinks updated + K skipped) to the calling skill."
     }
   ]
 }

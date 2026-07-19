@@ -5,7 +5,7 @@ description: Rename or move a vault markdown file while keeping all [[wikilink]]
 
 # Vault Doc Rename
 
-Renames or moves a vault markdown file and updates every `[[wikilink]]` that references it across the vault, via the `mcp__vault-mcp-server__rename_note` MCP tool. Wikilinks with anchors (`[[Note#Section]]`), display text (`[[Note|Label]]`), or both are handled. Path-qualified links are updated; bare links to an ambiguous basename are skipped with a warning.
+Renames or moves a vault markdown file and updates every `[[wikilink]]` that references it across the vault, via the `mcp__vault__rename_note` MCP tool. Wikilinks with anchors (`[[Note#Section]]`), display text (`[[Note|Label]]`), or both are handled. Path-qualified links are updated; bare links to an ambiguous basename are skipped with a warning.
 
 This skill has two entry points:
 
@@ -27,7 +27,7 @@ Present the operation to the user before applying — old name/path and new name
 
 ## Apply
 
-Call `mcp__vault-mcp-server__rename_note`:
+Call `mcp__vault__rename_note`:
 
 - `Note`: the old file — bare name, path-qualified name, or wikilink (user-invoked), or the fully-resolved `OldPath` (programmatic).
 - `NewName`: the new name or path, per [[#Resolve NewName]] (user-invoked), or the fully-resolved `NewPath` (programmatic).

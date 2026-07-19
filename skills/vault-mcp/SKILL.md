@@ -1,11 +1,11 @@
 ---
 name: vault-mcp
-description: Troubleshoot and recover the vault-mcp-server MCP connection — detect whether the server is up, start it, read its logs, and walk the recovery paths for a floored or disconnected session. Use when the vault MCP tools (mcp__vault-mcp-server__*) are missing from the session, a vault tool call fails with a connection, scope, or grant error, the server returns 503, or the user says "the vault server is down", "MCP tools aren't loading", "restart the vault server", or similar.
+description: Troubleshoot and recover the vault MCP server connection — detect whether the server is up, start it, read its logs, and walk the recovery paths for a floored or disconnected session. Use when the vault MCP tools (mcp__vault__*) are missing from the session, a vault tool call fails with a connection, scope, or grant error, the server returns 503, or the user says "the vault server is down", "MCP tools aren't loading", "restart the vault server", or similar.
 ---
 
 # Vault MCP
 
-Goal: figure out why vault-mcp-server isn't usable from this session, fix what an agent can fix, and tell the human plainly when only they can finish the recovery.
+Goal: figure out why the vault MCP server isn't usable from this session, fix what an agent can fix, and tell the human plainly when only they can finish the recovery.
 
 Script: `.claude/skills/vault-mcp/scripts/vault-mcp.ps1 -Action <Probe|Log|Start>`. Defaults: server repo `C:\Repos\vault-server`, port `5111`.
 
@@ -15,7 +15,7 @@ Auth background the diagnosis relies on: the client sends the committed, non-sec
 
 ### 1. Connected path first
 
-If the `mcp__vault-mcp-server__*` tools are loaded in this session, call `health_check` before anything else — it returns the server's own degradation detail. Then:
+If the `mcp__vault__*` tools are loaded in this session, call `health_check` before anything else — it returns the server's own degradation detail. Then:
 
 - `health_check` clean and the failing tool's error is specific to its arguments → the server and connection are fine; diagnose from that error.
 - Vault-content tools fail with `not scoped to vault ...` or `Grant ... does not permit ...` while `health_check` works → the session is **floored to `minimum-access`**: the selector didn't resolve to the dev default. Verify `appsettings.json` has `LocalhostAuth:DefaultGrantId: admin` and `grants.json` carries the token-less named `admin` grant (`"named": true`); grant/config changes are startup-only, so after fixing, the human must restart the server and reconnect the client (see [[#Reconnecting is human-only]]). Don't try `request_elevation` as a workaround — the shipped approver auto-denies.
@@ -59,7 +59,7 @@ Walk the human through it per [[#Reconnecting is human-only]].
 
 The agent cannot reconnect the MCP client; how the human does it depends on the surface:
 
-- **Terminal CLI session**: run `/mcp`, select `vault-mcp-server`, and Reconnect (or Approve, if pending).
+- **Terminal CLI session**: run `/mcp`, select `vault`, and Reconnect (or Approve, if pending).
 - **Claude Desktop app**: the CLI's `/mcp` server panel does not exist there — typing `/mcp` opens the third-party Connectors gallery, where project-scoped `.mcp.json` servers never appear. Each conversation is its own session and `.mcp.json` is read at session start, so **start a new conversation in the same project folder** — no app quit needed, and an existing conversation has no reload/reconnect affordance once the client's auto-reconnect attempts are exhausted. A previously-denied approval clears with `claude mcp reset-project-choices` from a terminal first.
 
 ## Honest limits

@@ -7,7 +7,7 @@ description: Troubleshoot and recover the vault-mcp-server MCP connection — de
 
 Goal: figure out why vault-mcp-server isn't usable from this session, fix what an agent can fix, and tell the human plainly when only they can finish the recovery.
 
-Script: `.claude/skills/vault-mcp/scripts/vault-mcp.ps1 -Action <Probe|Log|Start>`. Defaults: server repo `C:\Repos\vault-mcp-server`, port `5111`.
+Script: `.claude/skills/vault-mcp/scripts/vault-mcp.ps1 -Action <Probe|Log|Start>`. Defaults: server repo `C:\Repos\vault-server`, port `5111`.
 
 Auth background the diagnosis relies on: the client sends the committed, non-secret selector token (`Bearer vault-mcp-localhost-selector`, inlined in `.mcp.json` — nothing to set per machine), and the server binds it to the grant named by `appsettings.json`'s `LocalhostAuth:DefaultGrantId` (`admin` on dev machines, as a token-less named grant in `grants.json`). Localhost auth never 401s: a blank, unknown, or expired token floors to the built-in `minimum-access` grant — `health_check` and `request_elevation` still work, vault content doesn't.
 
@@ -53,7 +53,7 @@ Walk the human through it per [[#Reconnecting is human-only]].
 
 ### 6. Deep verification — E2E smoke test
 
-`C:\Repos\vault-mcp-server\e2e-smoke.ps1` builds the server (Release), starts its own instance against the machine's real config, runs a fixed probe set (health, auth floor, elevation denial, attenuation, audit-log hygiene), and tears down. Use it after server code or config changes, or when diagnosis points at the deployment seam (config parse errors, grants problems) rather than the client connection. It refuses to run while port 5111 is occupied — never kill a running server to make room for it without confirming with the human first. On a red result, triage from the failing probe's detail line plus `-Action Log`; don't re-derive the probe logic in prose.
+`C:\Repos\vault-server\e2e-smoke.ps1` builds the server (Release), starts its own instance against the machine's real config, runs a fixed probe set (health, auth floor, elevation denial, attenuation, audit-log hygiene), and tears down. Use it after server code or config changes, or when diagnosis points at the deployment seam (config parse errors, grants problems) rather than the client connection. It refuses to run while port 5111 is occupied — never kill a running server to make room for it without confirming with the human first. On a red result, triage from the failing probe's detail line plus `-Action Log`; don't re-derive the probe logic in prose.
 
 ## Reconnecting is human-only
 

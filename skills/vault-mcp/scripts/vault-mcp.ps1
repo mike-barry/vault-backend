@@ -8,12 +8,12 @@
 #   .\vault-mcp.ps1 -Action Log [-Tail <n>] [-ErrorsOnly]
 #   .\vault-mcp.ps1 -Action Start [-TimeoutSec <n>]
 #
-# -ServerRepo defaults to C:\Repos\vault-mcp-server; -Port to 5111.
+# -ServerRepo defaults to C:\Repos\vault-server; -Port to 5111.
 
 param(
     [Parameter(Mandatory)][ValidateSet('Probe', 'Log', 'Start')]
     [string]$Action,
-    [string]$ServerRepo = 'C:\Repos\vault-mcp-server',
+    [string]$ServerRepo = 'C:\Repos\vault-server',
     [int]$Port = 5111,
     [int]$Tail = 40,
     [switch]$ErrorsOnly,

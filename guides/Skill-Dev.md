@@ -57,7 +57,7 @@ Every `vault-xxx.ps1` file in `_shared/` gets its own direct unit test file in `
 
 ## Migrating a Skill to Wrap an MCP Tool
 
-When an MCP server exposes an operation a skill previously implemented via script, hollow the skill out: delete the script and its tests, and rewrite `SKILL.md` to call the tool directly, keeping only judgment, trigger phrasing, and confirmation logic in the skill body. Do this as a single clean swap, not a dual-path fallback to the old script - once the tool has its own dispatch-test coverage, a "try MCP, fall back to script" branch just adds two logic paths that can drift and a cleanup TODO likely to be forgotten; a plain skill-file edit is trivially `git revert`-able if something regresses post-cutover. `vault-doc-rename` -> `mcp__vault__rename_note` is the precedent.
+When an MCP server exposes an operation a skill previously implemented via script, hollow the skill out: delete the script and its tests, and rewrite `SKILL.md` to call the tool directly, keeping only judgment, trigger phrasing, and confirmation logic in the skill body. Do this as a single clean swap, not a dual-path fallback to the old script - once the tool has its own dispatch-test coverage, a "try MCP, fall back to script" branch just adds two logic paths that can drift and a cleanup TODO likely to be forgotten; a plain skill-file edit is trivially `git revert`-able if something regresses post-cutover. `vault-doc-rename` -> `mcp__vault__move` is the precedent.
 
 ## Editing a Skill
 

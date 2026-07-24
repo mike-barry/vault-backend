@@ -44,33 +44,32 @@ Call `mcp__vault__move`:
 
 - `Source`: the resolved vault-relative path from [[#Resolve Source]] (user-invoked), or the fully-resolved `OldPath` (programmatic).
 - `Dest`: the new name or path from [[#Resolve Dest]] (user-invoked), or the fully-resolved `NewPath` (programmatic).
-- `Kind`, `Vault`, `Force`: omit them. `Kind` is inferred from the source (a doc rename is always a `file`); omit `Vault` to use the default; leave `Force` off — see [[#Error Handling]] for when it comes up.
+- `Kind`, `Vault`: omit them. `Kind` is inferred from the source (a doc rename is always a `file`); omit `Vault` to use the default. There is no `Force` parameter — ambiguity is never an error, so there is nothing to override.
 
 The tool, under a single write lock:
 
 - Resolves the source's shape and computes the destination, creating destination-parent folders if they do not exist.
-- Rewrites every `[[...]]` / `![[...]]` reference to the moved file — bare links when the basename changed, path-qualified links whenever the path changed — emitting each rewritten target in canonical form (bare when the new name is unique vault-wide, else the full path).
+- Rewrites every `[[...]]` / `![[...]]` reference to the moved file — bare links when the basename changed (or when the move would otherwise have flipped their resolution), path-qualified links whenever the path changed — emitting each rewritten target in canonical form (bare when the new name is unique vault-wide, else the full path). Renaming into an already-occupied basename is not an error: the moved file's links emit full-path, and any bystander bare link whose resolution the move would otherwise have flipped is pinned to its current target's full path rather than left to silently re-resolve. Ambiguity is never a reason the move fails.
 - Moves the file.
 - Returns a JSON summary object.
 
 Report the result from the returned object:
 
 - `referencesRewritten` — count of link occurrences updated; `filesRewritten[]` — the files they were in (its length is the "in M files" count).
+- `referencesQualifiedProtectively` — when non-null, `{count, files}` of bystander bare links pinned to their current target's full vault path because the move would otherwise have changed what they resolve to. Surface this alongside the rewrite count, e.g. "2 bystander links were pinned to full paths to preserve their targets," and name the files.
 - `pureMove: true` — the basename was unchanged (a pure folder move), so no bare-link rewrite ran; report it as a straight move.
 - `namingWarnings` — if non-empty, the new name departs from the vault's `Title-Case-With-Hyphens` convention; pass the warning along (the move still succeeded).
 - `folderNoteOrphaned: true` — the moved file was a folder note (`Foo/Foo.md`) renamed or moved away from its folder; flag it so the user can confirm that was intended.
-- `referencesSkippedAmbiguous` / `basenameCollisionCreated` — present only on a forced move (see [[#Error Handling]]); if present, list the affected files so the user can review them manually.
 
 ## Error Handling
 
 If the tool call errors, **stop and report the error to the user verbatim**, then diagnose from it. Do not attempt to work around the failure using alternative tools (e.g. `Move-Item`, manual `git` commands, or filesystem operations). The tool is the authoritative implementation; agent improvisation risks leaving the vault in an inconsistent state.
 
-The tool returns structured `{code, message, data}` errors. The ones this skill routinely meets:
+The tool returns structured `{code, message, data}` errors. There is no ambiguity-related error — a basename collision or duplicate-basename rename simply succeeds via protective pinning (see [[#Apply]]). The errors this skill routinely meets:
 
-- **`ambiguous_references`** — the current basename is not unique vault-wide **and** bare `[[...]]` links to it exist, so the tool cannot rewrite them without guessing. It mutates nothing. Report the duplicate paths and referencing files from the error data, then offer the user two paths: rename to a different (unique) name, or — if they want to proceed anyway — re-run with `Force: true`, which leaves the ambiguous bare links untouched (reported in `referencesSkippedAmbiguous`) and rewrites the rest path-qualified. Do not pass `Force` without the user's explicit say-so.
-- **`basename_collision`** — the new name already exists elsewhere in the vault. It mutates nothing. The usual fix is a different name; alternatively `Force: true` proceeds and emits the rewritten links path-qualified (`basenameCollisionCreated`), leaving pre-existing bare links to the other file alone. Again, only with the user's explicit say-so.
 - **`not_found`** — nothing at the source path (e.g. it moved between [[#Resolve Source]] and the call). Report and re-resolve.
-- **`already_exists`** / **`kind_mismatch`** / **`invalid_argument`** — report verbatim; these signal the destination is occupied, the source was not the expected shape, or the name/path is malformed.
+- **`already_exists`** — the destination path itself is already occupied (distinct from a basename collision elsewhere in the vault, which is not an error). Report and ask the user for a different destination.
+- **`kind_mismatch`** / **`invalid_argument`** — report verbatim; these signal the source was not the expected shape, or the name/path is malformed (e.g. link-breaking characters in the new basename).
 
 ## Notes
 

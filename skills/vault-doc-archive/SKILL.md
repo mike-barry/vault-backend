@@ -79,7 +79,7 @@ If the script prints nothing, fall back to **today's date** — last resort; not
 | No date + **date-significant** type | Append recovered creation date: `Title-YYYY-MM-DD.md` |
 | No date + **non-date-significant** type | Move as-is — no date added |
 
-When a rename is needed (leading-date flip or date append), keep the stem otherwise intact — do not move or strip the type word from the title. Extract just the date segment and reattach it at the end.
+When a rename is needed (leading-date flip or date append), keep the stem otherwise intact — do not move or strip the type word from the title. Extract just the date segment and reattach it at the end of the stem, *before* the `.md` extension — the destination must keep it (see [[#Apply]]).
 
 Examples:
 
@@ -123,11 +123,12 @@ Note any filename changes (leading-date flip, date append) and frontmatter addit
 
 1. Inject `doc.created` / `doc.archived` / `doc.type` frontmatter into the source file in place, and strip any `use_skill:` `agent.instructions` entries — the routing directive goes stale once a doc is archived (frozen, never rewritten). Bare and `pinned:` entries are left untouched.
 2. Create `Archive/` in the destination folder if it does not exist (no folder note needed).
-3. Call `vault-doc-rename` at its **programmatic entry point** with the fully-resolved `OldPath` and `NewPath`. It handles the `git mv`, wikilink updates, and move atomically.
-   - If the filename is unchanged (as-is move), `OldPath` and `NewPath` differ only in the folder segment — the rename script treats this as a folder move and skips wikilink rewriting since the basename is unchanged.
-4. Report the result: file archived + N wikilinks updated in M files + K skipped.
+3. Call `vault-doc-rename` at its **programmatic entry point** with the fully-resolved `OldPath` and `NewPath`. It moves the file and rewrites every wikilink reference under a single write lock, via the `mcp__vault__move` tool. The move is a **filesystem move, not a `git mv`** — nothing is staged or committed, and the archive lands in the working tree like any other edit; git enters only as recovery advice if a write fails partway.
+   - **`NewPath` must carry the source's `.md` extension**, since [[#Compute Destination]] always produces a `.md` filename. The tool preserves extensions and infers nothing, so a bare `Archive/Plan-My-Doc` is refused with `invalid_argument` rather than renamed.
+   - If the filename is unchanged (as-is move), `OldPath` and `NewPath` differ only in the folder segment and the tool reports `pureMove: true`. It still rewrites every path-qualified link to the doc; only the bare-link pass is skipped, and only when the basename is unique vault-wide.
+4. Report the result: file archived + N wikilinks updated in M files (`referencesRewritten` and `filesRewritten[]`), plus whatever `vault-doc-rename` flags — `referencesQualifiedProtectively` (bystander bare links pinned to full paths so the move doesn't change what they resolve to), `namingWarnings`, and `lockWarning` when present.
 
-If any wikilinks were skipped (ambiguous basename), list the affected files so the user can update them manually.
+There is no ambiguity failure to report: a basename collision succeeds via protective pinning rather than skipping a link. The one skip that can occur is `filesSkippedUnreadable[]` — notes the reference scan could not read. When it is non-empty, list those files: links inside them were **not** rewritten and need a manual check.
 
 ## Archive Compaction (on demand)
 

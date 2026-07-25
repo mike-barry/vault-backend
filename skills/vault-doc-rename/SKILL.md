@@ -26,24 +26,38 @@ Programmatic entry: `OldPath` is already a resolved vault-relative path — use 
 
 ## Resolve Dest
 
-Pass the user's new name through as given as `Dest`:
+`Dest` must **carry the source's extension** — the tool infers nothing and converts nothing. Construct the extension yourself; do not make the user type it.
 
 - A bare name (no `/`) keeps the file in its current folder and renames only the basename.
 - A name containing `/` is treated as a full vault-relative destination path. A leading `/` targets the vault root.
-- The `.md` extension is optional either way — the tool adds it.
+- **Append `.md` if the user's new name does not already end in it.** This skill renames markdown docs, so the source is always a `.md` note and the destination must be too. The user still says "rename it to Beta" — you send `Beta.md`. Never ask the user to supply the extension, and never echo the raw name back at them as if the tool had rejected it.
+- If the user explicitly asks for a *different* extension (`Notes.md` → `Notes.txt`), that is a file-type conversion, which `move` refuses outright and has no override for. Tell them the tool cannot change what a file is, and stop — do not work around it.
 
-Programmatic entry: `NewPath` is the fully-resolved destination — use it directly as `Dest`.
+Programmatic entry: `NewPath` is the fully-resolved destination and already carries `.md` — use it directly as `Dest`.
+
+## Preview
+
+Call `mcp__vault__move` with `Apply: false` before confirming. This runs the tool's plan and validate phases and returns the **complete report** — every field the real call returns — while mutating nothing. Use it to show the user exactly what will happen:
+
+- `filesRewritten[]` — the files whose links the move will edit, named at the paths they will have *after* the move. `referencesRewritten` is the occurrence count across them.
+- `referencesQualifiedProtectively` — bystander links that will be pinned.
+- `namingWarnings`, `folderNoteRenamed`, `folderNoteOrphaned` — flags the user should see before saying yes.
+- `applied: false` — confirms this was a plan, not a result. If a return you believe is a preview says `applied: true`, the move already happened; report that plainly rather than re-running it.
+
+The preview is a faithful prediction: apart from `applied`, its fields match what the applying call returns. It is not a bypass either — every validate-phase refusal (`not_found`, `already_exists`, `readonly_targets`, `invalid_argument`) fires under `Apply: false` exactly as it would under a real call, so a clean preview is also a validation pass.
+
+Programmatic entry: skip the preview — `vault-doc-archive` has already resolved and confirmed the operation.
 
 ## Confirm
 
-Present the operation to the user before applying — old path and new name/path — and ask for confirmation. Do not apply without an explicit yes (or a prior standing instruction to proceed without confirming). The tool has no dry-run mode, so there is no itemized wikilink-diff preview available before applying; mention this if the user asks to see the changes first.
+Present the operation to the user — old path, new name/path, and the preview from [[#Preview]] — and ask for confirmation. Do not apply without an explicit yes (or a prior standing instruction to proceed without confirming).
 
 ## Apply
 
-Call `mcp__vault__move`:
+Call `mcp__vault__move` again, this time without `Apply` (it defaults to true — mutation is the point of the call):
 
 - `Source`: the resolved vault-relative path from [[#Resolve Source]] (user-invoked), or the fully-resolved `OldPath` (programmatic).
-- `Dest`: the new name or path from [[#Resolve Dest]] (user-invoked), or the fully-resolved `NewPath` (programmatic).
+- `Dest`: the extension-carrying name or path from [[#Resolve Dest]] (user-invoked), or the fully-resolved `NewPath` (programmatic).
 - `Kind`, `Vault`: omit them. `Kind` is inferred from the source (a doc rename is always a `file`); omit `Vault` to use the default. There is no `Force` parameter — ambiguity is never an error, so there is nothing to override.
 
 The tool, under a single write lock:
@@ -55,11 +69,18 @@ The tool, under a single write lock:
 
 Report the result from the returned object:
 
+- `applied: true` — the move landed. (A return carrying `applied: false` is a plan; nothing happened. Never report a plan as a completed rename.)
 - `referencesRewritten` — count of link occurrences updated; `filesRewritten[]` — the files they were in (its length is the "in M files" count).
 - `referencesQualifiedProtectively` — when non-null, `{count, files}` of bystander bare links pinned to their current target's full vault path because the move would otherwise have changed what they resolve to. Surface this alongside the rewrite count, e.g. "2 bystander links were pinned to full paths to preserve their targets," and name the files.
 - `pureMove: true` — the basename was unchanged (a pure folder move), so no bare-link rewrite ran; report it as a straight move.
 - `namingWarnings` — if non-empty, the new name departs from the vault's `Title-Case-With-Hyphens` convention; pass the warning along (the move still succeeded).
 - `folderNoteOrphaned: true` — the moved file was a folder note (`Foo/Foo.md`) renamed or moved away from its folder; flag it so the user can confirm that was intended.
+
+Every write-class return also carries a fixed envelope, the same on every vault write tool:
+
+- `filesSkippedUnreadable[]` — vault-relative paths of notes the reference scan could not read (vanished mid-scan, dangling link). Normally `[]`; when non-empty, name the files, since links inside them were **not** rewritten.
+- `capabilitiesUsed` — always `[]` for `move`; nothing to report.
+- `lockWarning` — **present only when it fires** (the write inherited a lock abandoned by a process that died mid-operation). Absent on a normal call, so test for its presence, not for a null. When present, pass it to the user verbatim — an earlier vault write may be torn.
 
 ## Error Handling
 
@@ -69,7 +90,8 @@ The tool returns structured `{code, message, data}` errors. There is no ambiguit
 
 - **`not_found`** — nothing at the source path (e.g. it moved between [[#Resolve Source]] and the call). Report and re-resolve.
 - **`already_exists`** — the destination path itself is already occupied (distinct from a basename collision elsewhere in the vault, which is not an error). Report and ask the user for a different destination.
-- **`kind_mismatch`** / **`invalid_argument`** — report verbatim; these signal the source was not the expected shape, or the name/path is malformed (e.g. link-breaking characters in the new basename).
+- **`invalid_argument` for a missing or changed extension** — the destination did not carry the source's extension. This is a bug in how *you* built `Dest`, not something to hand to the user: the error's `data.suggestedDest` names the exact value that works, so retry once with it. If the user genuinely asked for a file-type conversion, stop and explain instead — `move` refuses conversions and has no override.
+- **`kind_mismatch`** / other **`invalid_argument`** — report verbatim; these signal the source was not the expected shape, or the name/path is malformed (e.g. link-breaking characters in the new basename).
 
 ## Notes
 

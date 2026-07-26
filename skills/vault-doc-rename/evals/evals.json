@@ -38,8 +38,8 @@
     },
     {
       "id": 8,
-      "prompt": "vault-doc-archive calls vault-doc-rename programmatically with fully-resolved OldPath 'Areas/Personal/Vault/Inbox/Plan-Alpha.md' and NewPath 'Areas/Personal/Vault/Archive/2026-06-20-Plan-Alpha.md'.",
-      "expected_output": "Agent skips confirmation AND the Apply: false preview entirely (programmatic entry point — the calling skill already resolved and confirmed the operation) and skips source globbing since OldPath is already a resolved path. NewPath already carries .md, so nothing is appended. Agent makes exactly one mcp__vault__move call, with Source: 'Areas/Personal/Vault/Inbox/Plan-Alpha.md', Dest: 'Areas/Personal/Vault/Archive/2026-06-20-Plan-Alpha.md' and no Apply argument, without asking the user. Agent returns the tool's summary (applied, referencesRewritten, filesRewritten[], pureMove, and any namingWarnings / folderNoteOrphaned flags) to the calling skill."
+      "prompt": "vault-doc-archive calls vault-doc-rename programmatically with fully-resolved OldPath 'Areas/Personal/Vault/Inbox/Plan-Alpha.md' and NewPath 'Areas/Personal/Vault/Archive/Plan-Alpha-2026-06-20.md'.",
+      "expected_output": "Agent skips confirmation AND the Apply: false preview entirely (programmatic entry point — the calling skill already resolved and confirmed the operation) and skips source globbing since OldPath is already a resolved path. NewPath already carries .md, so nothing is appended. Agent makes exactly one mcp__vault__move call, with Source: 'Areas/Personal/Vault/Inbox/Plan-Alpha.md', Dest: 'Areas/Personal/Vault/Archive/Plan-Alpha-2026-06-20.md' and no Apply argument, without asking the user. Agent returns the tool's summary (applied, referencesRewritten, filesRewritten[], pureMove, and any namingWarnings / folderNoteOrphaned flags) to the calling skill."
     },
     {
       "id": 9,

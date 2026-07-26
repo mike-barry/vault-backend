@@ -24,8 +24,26 @@ $titleLowercaseWords = @(
 # Brand names, proper nouns, and file-extension references whose internal capitalization
 # deviates from Title-Case (e.g. iCloud starts with lowercase 'i'; 'md' stays lowercase in a
 # filename like Reading-...-CLAUDE-md-... that's literally referencing "CLAUDE.md"). Segments
-# matching any entry here are exempt from the Title-Case check.
-$titleCaseExceptions = @('iCloud', 'md')
+# matching any entry returned here are exempt from the Title-Case check.
+#
+# Vault state rather than a hardcoded array: the list lives at
+# .vault/state/vault-lint/filename-exceptions.txt so one file serves both this skill and the
+# server's lint_suppressions tool, which is the only write path to it. A missing file degrades
+# to no exceptions, matching how check-broken-wikilinks.ps1 treats a missing ignore list.
+# Resolution is deferred to a function because the vault root is not known at dot-source time -
+# callers pass -VaultRootOverride after resolving it, the same shape Get-LintMarkdownFiles uses.
+function Get-TitleCaseExceptions {
+    param(
+        # Vault root directory. Auto-resolved from the script location when not specified.
+        [string]$VaultRootOverride
+    )
+    if (-not $VaultRootOverride) { $VaultRootOverride = Get-VaultRoot $PSScriptRoot }
+    $exceptionsFile = Join-Path $VaultRootOverride '.vault\state\vault-lint\filename-exceptions.txt'
+    if (-not (Test-Path $exceptionsFile)) { return @() }
+    @([System.IO.File]::ReadAllLines($exceptionsFile) |
+        ForEach-Object { ($_ -split '#', 2)[0].Trim() } |
+        Where-Object { $_ -ne '' })
+}
 
 # Strips fenced code blocks and inline code spans from markdown content, so checks that
 # scan for [[wikilinks]] or similar prose-only patterns don't match literal syntax shown as

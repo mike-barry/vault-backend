@@ -10,6 +10,10 @@ param(
 . "$PSScriptRoot\lint-common.ps1"
 $vaultRoot = if ($VaultRootOverride) { $VaultRootOverride } else { Get-VaultRoot $PSScriptRoot }
 
+# Read after the vault root resolves: the exception list is per-vault state under
+# .vault/state/vault-lint/, not a constant in lint-common.ps1.
+$titleCaseExceptions = Get-TitleCaseExceptions -VaultRootOverride $vaultRoot
+
 $violations = @()
 
 Get-LintMarkdownFiles -PathOverride $PathOverride -VaultRootOverride $vaultRoot | ForEach-Object {

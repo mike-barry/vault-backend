@@ -154,7 +154,7 @@ $excludedCmp = @($excludePaths | ForEach-Object { ConvertTo-ComparablePath $_ })
 # Vault-relative subfolder paths that are intentionally unreferenced in their parent folder
 # note. One path per line; '#' starts a comment. Add here to suppress a known-intentional
 # 'Unreferenced non-standard subfolder' finding without adding a nav entry for it.
-$ignoredSubfoldersFile = Join-Path $vaultRoot '.vault\state\vault-agent-frontmatter\known-ignored-subfolders.txt'
+$ignoredSubfoldersFile = Join-Path $vaultRoot '.vault\state\vault-lint\known-ignored-subfolders.txt'
 $ignoredSubfoldersCmp  = if (Test-Path $ignoredSubfoldersFile) {
     @((Get-Content $ignoredSubfoldersFile) |
         Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' } |

@@ -240,6 +240,66 @@ try {
     Assert-That 'unlinked Corpus member flagged' ($out -match "Corpus member without a link entry" -and $out -match 'Orphan-Doc\.md') $out
     Assert-That 'linked Corpus member not flagged' ($out -notmatch 'Linked-Doc\.md') $out
 
+    # ---- folder-note completeness: Corpus reach through an intermediate folder note ------
+    # The note links a Corpus subfolder's folder note by bare basename; that folder note routes
+    # on to its members, which therefore need no duplicate entry here. A member the intermediate
+    # does not route to is still flagged, and a non-folder-note member confers no reach.
+    Write-Host "`nfolder-note completeness - transitive Corpus reach"
+    Reset-TestFolder
+    New-TestFile 'AreaE/AreaE.md' (Fm @(
+        'nav.contents:',
+        '  - link: "[[Registry]]"',
+        '    description: "registry folder note routing to the per-item docs"',
+        '  - link: "[[AreaE/Corpus/Gossip]]"',
+        '    description: "an ordinary corpus doc that merely mentions a sibling"'
+    ))
+    New-TestFile 'AreaE/Corpus/Registry/Registry.md' (Fm @(
+        'nav.contents:',
+        '  - link: "[[Item-One]]"',
+        '    description: "first routed item"',
+        '  - link: "[[AreaE/Corpus/Registry/Item-Two]]"',
+        '    description: "second routed item, path-qualified"'
+    ))
+    New-TestFile 'AreaE/Corpus/Registry/Item-One.md' 'x'   # reached via bare link -> not flagged
+    New-TestFile 'AreaE/Corpus/Registry/Item-Two.md' 'x'   # reached via qualified link -> not flagged
+    New-TestFile 'AreaE/Corpus/Registry/Item-Lost.md' 'x'  # routed to by nobody -> flagged
+    New-TestFile 'AreaE/Corpus/Gossip.md' (Fm @(
+        'nav.see_also:',
+        '  - link: "[[Rumor]]"',
+        '    description: "a prose cross-reference, not routing"'
+    ))
+    New-TestFile 'AreaE/Corpus/Rumor.md' 'x'               # only a non-folder-note links it -> flagged
+    $out = Invoke-Validate
+    Assert-That 'member reached via intermediate folder note not flagged' ($out -notmatch 'Item-One\.md' -and $out -notmatch 'Item-Two\.md') $out
+    Assert-That 'intermediate folder note itself not flagged'             ($out -notmatch 'Registry/Registry\.md') $out
+    Assert-That 'member the intermediate does not route to is flagged'    ($out -match 'Item-Lost\.md') $out
+    Assert-That 'a non-folder-note link confers no reach'                 ($out -match 'Rumor\.md') $out
+
+    # ---- folder-note completeness: Corpus reach survives a link cycle ---------------------
+    # Two Corpus folder notes that link each other must terminate the walk, not hang it.
+    Write-Host "`nfolder-note completeness - Corpus reach cycle safety"
+    Reset-TestFolder
+    New-TestFile 'AreaF/AreaF.md' (Fm @(
+        'nav.contents:',
+        '  - link: "[[Ping]]"',
+        '    description: "first half of a mutual pair"'
+    ))
+    New-TestFile 'AreaF/Corpus/Ping/Ping.md' (Fm @(
+        'nav.contents:',
+        '  - link: "[[Pong]]"',
+        '    description: "routes to its counterpart"'
+    ))
+    New-TestFile 'AreaF/Corpus/Pong/Pong.md' (Fm @(
+        'nav.contents:',
+        '  - link: "[[Ping]]"',
+        '    description: "routes back, closing the cycle"',
+        '  - link: "[[Tail]]"',
+        '    description: "and on to a leaf"'
+    ))
+    New-TestFile 'AreaF/Corpus/Pong/Tail.md' 'x'   # reachable only through the cycle -> not flagged
+    $out = Invoke-Validate
+    Assert-That 'cyclic folder-note links terminate and resolve' ($out -notmatch 'AreaF') $out
+
     # ---- folder-note completeness: unreferenced non-standard subfolder --------
     Write-Host "`nfolder-note completeness - non-standard subfolder"
     Reset-TestFolder

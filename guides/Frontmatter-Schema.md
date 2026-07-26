@@ -105,7 +105,9 @@ A folder note should account for every standard subfolder that physically exists
   | `Archive` | Completed and inactive artifacts, date-prefixed                | researching prior artifacts or project history |
 
   The boilerplate is a sensible default - tune the wording to the note when it helps.
-- **`Corpus/`** - a durable corpus of per-member `link` entries, **never** a single `folder:` entry. A member note with no `link` is surfaced for **interactive** resolution (add a link or confirm it stays unlinked), not auto-added.
+- **`Corpus/`** - a durable corpus of per-member `link` entries, **never** a single `folder:` entry. A member note the folder note does not reach by link is surfaced for **interactive** resolution (add a link or confirm it stays unlinked), not auto-added.
+
+    **Reach is transitive through an intermediate folder note.** When a `Corpus/` subfolder has its own folder note, the parent links *that* note and the subfolder's members are routed to from it - the parent does not repeat them. A member counts as reached if the folder note links it directly, or links a folder note that (directly or transitively, cycles included) links it. Only a folder note is a valid hop: an ordinary member that cross-references a sibling in its own `nav.*` is prose, not routing, and confers no reach. Example: `Projects/Vault-MCP-Server/Vault-MCP-Server.md` links `[[Tools]]`, and `Corpus/Tools/Tools.md` routes on to the per-tool docs beside it.
 - **Any other (non-standard) subfolder** - surfaced for interactive resolution; the user decides whether it warrants a `link`/`folder` entry or is intentionally omitted.
 
 ## Authoring Rules

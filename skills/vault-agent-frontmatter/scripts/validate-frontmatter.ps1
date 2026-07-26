@@ -11,6 +11,7 @@
 # longer resolves (per-entry), and a standard subfolder that physically exists but has no
 # entry (folder-note completeness, below) - ephemeral folders are emitted with a ready-to-add
 # boilerplate block, Ref members and non-standard folders are surfaced for the user to resolve.
+# Corpus membership resolves transitively through intermediate folder notes (Expand-CorpusLinkReach).
 # Reporting stays report-only; the auto-add edit itself is applied by vault-lint via the agent.
 param(
     # Vault-relative folder to scope the scan (e.g. 'Areas/Personal'). When omitted, the
@@ -72,6 +73,9 @@ $corpusFolderName = 'Corpus'
 
 # Last path segment of a wikilink target, alias/anchor stripped:
 # '[[Corpus/Task-System|x]]' -> 'Task-System', '[[Vision]]' -> 'Vision'. $null when not a link.
+# Reducing to the basename is how the vault itself resolves a link (glob '**/Name.md'), so the
+# bare and path-qualified forms of the same target - '[[Tools]]' and
+# '[[Vault-MCP-Server/Corpus/Tools]]' - collapse to one comparable key.
 function Get-LinkBasename {
     param([string]$Link)
     if ($Link -match '\[\[([^\]]+)\]\]') {
@@ -79,6 +83,61 @@ function Get-LinkBasename {
         if ($inner) { return (Split-Path $inner -Leaf) }
     }
     return $null
+}
+
+# Lowercased link basenames a note declares across its nav.* blocks. A `folder:` entry is not a
+# link, so it is skipped here (the folder-note completeness scan tracks those separately).
+function Get-NavLinkBasenames {
+    param($Blocks)
+    $set = New-Object System.Collections.Generic.HashSet[string]
+    $map = @{}
+    foreach ($b in $Blocks) { $map[$b.Key] = $b }
+    foreach ($nk in $navKeys) {
+        if (-not $map.ContainsKey($nk)) { continue }
+        foreach ($it in (Get-FrontmatterListItems $map[$nk].Children)) {
+            if (-not $it.IsMap) { continue }
+            if ($it.Fields.Contains('folder') -and $it.Fields['folder']) { continue }
+            if ($it.Fields.Contains('link')) {
+                $lb = Get-LinkBasename $it.Fields['link']
+                if ($lb) { [void]$set.Add($lb.ToLowerInvariant()) }
+            }
+        }
+    }
+    return $set
+}
+
+# Corpus routing may go one or more hops through an intermediate folder note: the note under
+# scan links a Corpus subfolder's folder note, and that note's own nav.contents routes on to the
+# members inside it. Expand $Declared into every link basename reachable that way.
+#
+# Only a *folder note* (basename == its parent folder's name) is stepped through. Routing is a
+# folder note's job; an ordinary Corpus doc that name-drops a sibling in its nav.see_also is a
+# prose cross-reference, and traversing those would let any member silently satisfy the check
+# for any other. Intermediates are looked up among $Members - the Corpus subtree already being
+# enumerated - which both matches basename resolution and keeps the lookup free of vault-wide
+# basename ambiguity. $visited terminates a cycle between two folder notes that link each other.
+function Expand-CorpusLinkReach {
+    param($Declared, $Members)
+    $folderNotes = @{}
+    foreach ($m in $Members) {
+        if (Test-IsFolderNote $m) { $folderNotes[$m.BaseName.ToLowerInvariant()] = $m }
+    }
+    $reach   = New-Object System.Collections.Generic.HashSet[string]
+    $visited = New-Object System.Collections.Generic.HashSet[string]
+    $queue   = New-Object System.Collections.Generic.Queue[string]
+    foreach ($n in @($Declared)) { if ($reach.Add($n)) { $queue.Enqueue($n) } }
+    while ($queue.Count -gt 0) {
+        $n = $queue.Dequeue()
+        if (-not $folderNotes.ContainsKey($n)) { continue }
+        if (-not $visited.Add($n)) { continue }
+        $hop = $folderNotes[$n]
+        $hopFm = Get-FrontmatterLines ([System.IO.File]::ReadAllText($hop.FullName, [System.Text.Encoding]::UTF8))
+        if ($null -eq $hopFm) { continue }
+        foreach ($lb in (Get-NavLinkBasenames (Get-FrontmatterBlocks $hopFm))) {
+            if ($reach.Add($lb)) { $queue.Enqueue($lb) }
+        }
+    }
+    return $reach
 }
 
 # ---------------------------------------------------------------------------
@@ -229,8 +288,9 @@ Get-VaultMarkdownFiles -VaultRoot $vaultRoot -PathOverride $PathOverride `
     # the subfolders that physically exist under <Dir> against the entries the note declares:
     #   - a standard ephemeral folder (Inbox/Archive) with no `folder:` entry is
     #     auto-addable - emit the ready-to-insert block with house-style boilerplate;
-    #   - a 'Corpus' member with no `link` entry is surfaced for interactive resolution
-    #     (Corpus is per-member links, never a single folder entry);
+    #   - a 'Corpus' member the note does not reach by link is surfaced for interactive
+    #     resolution (Corpus is per-member links, never a single folder entry); reach is
+    #     transitive through an intermediate folder note - see Expand-CorpusLinkReach;
     #   - any other unreferenced subfolder is surfaced for interactive resolution.
     # The reverse direction (a declared `folder:` path that no longer resolves) is handled by
     # the per-entry check above.
@@ -239,19 +299,16 @@ Get-VaultMarkdownFiles -VaultRoot $vaultRoot -PathOverride $PathOverride `
     if (Test-IsFolderNote $_) {
         # The folder paths and link basenames this note already declares.
         $declaredFolders = New-Object System.Collections.Generic.HashSet[string]
-        $declaredLinks   = New-Object System.Collections.Generic.HashSet[string]
         foreach ($nk in $navKeys) {
             if (-not $byKey.ContainsKey($nk)) { continue }
             foreach ($it in (Get-FrontmatterListItems $byKey[$nk].Children)) {
                 if (-not $it.IsMap) { continue }
                 if ($it.Fields.Contains('folder') -and $it.Fields['folder']) {
                     [void]$declaredFolders.Add((ConvertTo-ComparablePath $it.Fields['folder']))
-                } elseif ($it.Fields.Contains('link')) {
-                    $lb = Get-LinkBasename $it.Fields['link']
-                    if ($lb) { [void]$declaredLinks.Add($lb.ToLowerInvariant()) }
                 }
             }
         }
+        $declaredLinks = Get-NavLinkBasenames $blocks
 
         Get-ChildItem -LiteralPath $parentDir -Directory -ErrorAction SilentlyContinue |
             Where-Object { -not $_.Name.StartsWith('.') } | ForEach-Object {
@@ -270,9 +327,13 @@ Get-VaultMarkdownFiles -VaultRoot $vaultRoot -PathOverride $PathOverride `
                         "           load_when: `"$($bp.load_when)`"")
                 }
             } elseif ($name -eq $corpusFolderName) {
-                Get-ChildItem -LiteralPath $childDir.FullName -Recurse -Filter '*.md' -ErrorAction SilentlyContinue | ForEach-Object {
-                    if (-not $declaredLinks.Contains($_.BaseName.ToLowerInvariant())) {
-                        $mrel = ($_.FullName.Substring($vaultRoot.Length)) -replace '\\', '/'
+                $members = @(Get-ChildItem -LiteralPath $childDir.FullName -Recurse -Filter '*.md' -ErrorAction SilentlyContinue)
+                # Membership resolves transitively: directly linked, or linked by a folder note
+                # this note (directly or transitively) links. See Expand-CorpusLinkReach.
+                $reachable = Expand-CorpusLinkReach $declaredLinks $members
+                foreach ($m in $members) {
+                    if (-not $reachable.Contains($m.BaseName.ToLowerInvariant())) {
+                        $mrel = ($m.FullName.Substring($vaultRoot.Length)) -replace '\\', '/'
                         Add-Violation $rel "Corpus member without a link entry (resolve interactively): '$mrel' - add a 'link' entry for it or confirm it should stay unlinked"
                     }
                 }

@@ -39,7 +39,7 @@ Triggered only after the user's explicit go-ahead following the Scaffold checkpo
 Triggered once every `## Checklist` item is done (or moved to `Out of Scope`) and the user agrees to close out the implement doc. Proceed only with explicit user permission.
 
 1. **Replace the plan's `## Proposed Implementation Checklist`** with the implement doc's final `## Checklist` state, retitled `## Implementation Checklist`.
-2. **Distill the `## Log` into the plan as target-state, not history.** Fold design changes directly into the relevant Design Sections — write as if it had always been the design, not a "tried X, switched to Y" narrative. Add a terse Locked Decisions entry (claim, one-line why, date, pointer) only for genuine decision points worth remembering later, not routine progress or false starts.
+2. **Distill the `## Log` into the plan as target-state, not history.** Fold design changes directly into the relevant Design Sections — write as if it had always been the design, not a "tried X, switched to Y" narrative. Add a terse Locked Decisions entry (claim, rejected alternative and why it lost) only for closed forks, per [[plan#What Earns a Locked Decision]] — not routine progress or false starts.
 3. **Remove the forward link** to the implement doc from the plan's intro paragraph.
 4. **Report back** what was updated, then offer to delete the implement doc.
 5. **On confirmation, delete the implement doc file** — a plain file delete, not `git rm` or `vault-doc-archive`. The file may never have been committed, so no git-specific instruction should be assumed.

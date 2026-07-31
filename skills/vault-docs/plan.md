@@ -13,7 +13,7 @@ Every planning doc uses these sections, in this order.
 | Frontmatter | `doc.created` + `doc.type: Plan` — schema per [[Document-Conventions]] — plus an `agent.instructions` `use_skill:` entry routing edits through this skill, per [[#Scaffold a Planning Doc]]. |
 | Intro paragraph | One short paragraph under the H1: what this plans, the task it serves if one exists (link the `Tasks.md` item), and current status. No heading. |
 | `## Goals` | What the work is trying to achieve. The motivation, not the steps. |
-| `## Locked Decisions` | A **terse decision log** — one entry per settled decision: the claim in a sentence, a one-line *why*, the date, and a pointer to the Design subsection that implements it. |
+| `## Locked Decisions` | A **terse log of closed forks** — one entry per settled decision: the claim, and the alternative that was rejected with why it lost. Grouped under the Design subsection each belongs to. See [[#What Earns a Locked Decision]]. |
 | `## Design Sections` | The substance of the plan — target design, broken into H3 subsections as needed. **This is the sole source of truth for the current what/how.** Section title can be specific (e.g. `## Target Design`). |
 | `## Open Questions` | Only the decisions that are *genuinely still open*. When one resolves, it leaves this section — it is not kept here as a Resolved note. |
 | `## Proposed Implementation Checklist` / `## Implementation Checklist` | Sequenced `- [ ]` steps. Titled with the "Proposed" qualifier from scaffold through the entire implementation phase, since most plans don't survive contact with implementation unchanged; retitled to `## Implementation Checklist` at collapse (full flow) or once inline implementation finishes (inline flow has no separate sync step), and left in place at close-out as a completed record — never stripped. |
@@ -33,17 +33,30 @@ Triggered when a task needs upfront design (recognizing that is `vault-tasks`' j
 
 ## Maintain an Active Planning Doc
 
-Triggered whenever an in-progress planning doc is updated as work proceeds — decisions get made, questions resolve, the design shifts. Keep the **active** doc lean — it's loaded into context every session, so duplication costs directly. It only freezes into a historical record at close-out.
+Triggered whenever an in-progress plan is updated as work proceeds. Keep it lean — it loads into context every session, so duplication costs directly.
 
-**The one-source rule.** Every fact lives in exactly one place:
-- The **design detail** (the what/how) lives in **Design Sections**, and nowhere else.
-- The **record that a decision was made** lives as a one-line entry in **Locked Decisions**, pointing at the Design subsection that carries the detail.
+**The one-source rule.** Design Sections carry the design; Locked Decisions carry the closed forks. Design describes the system that exists, never why it isn't something else — that is all the log adds, and an entry restating its subsection is dead weight.
 
-**When a decision is made:** put the design detail in the relevant Design subsection, then add a one-line Locked Decisions entry — claim, one-line *why*, date, pointer to that subsection. Do not paste the design body into the decision log.
+**Making a decision.** Put the design detail in the relevant Design subsection, then add a Locked Decisions entry. Never paste the design body into the log.
 
-**When an Open Question resolves:** (1) fold the answer into Design Sections, (2) add the one-line Locked Decisions entry, (3) **delete the question** from Open Questions. The decision log is the preservation — do not also keep a struck-through "Resolved" copy of the question.
+`- **The toilet roll hangs over the top.** Rejected: hanging under, which makes the loose end hard to find.`
 
-**When a decision is reversed:** strike through (`~~...~~`) the now-superseded Locked Decisions entry and append a pointer to the entry that replaces it (e.g. `~~...~~ — superseded by the 2026-06-20 decision below`). Add the new entry fresh. Do **not** narrate superseded states *inside* a current entry (no inline "(revised: ...)" parentheticals), and update Design Sections to reflect only the current decision.
+**Resolving an Open Question.** Fold the answer into Design Sections and delete the question. Add a Locked Decisions entry only if a fork closed — a question settled by a fact leaves nothing to log. Never keep a struck-through "Resolved" copy.
+
+**Reversing a decision.** Rewrite the existing entry; never add a second one for the same fork. The new claim takes the entry, the superseded decision becomes its rejected alternative, and the reason names what flipped it. Update Design Sections to match.
+
+`- **The toilet roll hangs under.** Rejected: hanging over the top, done that way until the cat learned to unspool it.`
+
+### What Earns a Locked Decision
+
+An entry needs a **real fork** — something rejected. Without one it is a design fact and belongs in Design Sections alone. Two exceptions:
+
+- **Forced** — the alternative is not viable, but the reason is non-obvious enough that someone will propose it anyway. Record what makes it unavailable.
+- **Sequencing** — nothing is contested, but acting late loses the option. Record the cost of not deciding.
+
+Scope statements are not decisions: "X is not built" belongs in `## Out of Scope` alone.
+
+**Order.** Entries group under the Design subsection they belong to, in the order those subsections appear, and run oldest first within a group. The group label is a wikilink to that subsection, so entries carry no individual pointer.
 
 ## Start Implementation
 

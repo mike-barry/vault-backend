@@ -14,7 +14,7 @@ Triggered only after the user's explicit go-ahead following Setup above — neve
 
 1. **Proceed one step at a time**, or a user-requested batch of steps, only with explicit approval — never unprompted.
 2. **Check off `## Proposed Implementation Checklist` items in place** as they complete, and freely reorder, add, or trim items as reality demands.
-3. **Fold deviations directly into the plan as they're discovered** — no intermediate log. When a step surfaces a design change, put the detail in the relevant Design subsection and add a one-line Locked Decisions entry (claim, one-line why, date, pointer), per `plan.md`'s [[plan#Maintain an Active Planning Doc|Maintain]] one-source rule. Only genuine decision points worth remembering later get an entry — not routine progress or false starts.
+3. **Fold deviations directly into the plan as they're discovered** — no intermediate log. When a step surfaces a design change, put the detail in the relevant Design subsection and add a Locked Decisions entry (claim, rejected alternative and why it lost), per `plan.md`'s [[plan#Maintain an Active Planning Doc|Maintain]] one-source rule. Only closed forks earn an entry, per [[plan#What Earns a Locked Decision]] — not routine progress or false starts.
 
 ## Finish
 

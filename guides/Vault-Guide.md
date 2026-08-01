@@ -3,7 +3,7 @@ doc.created: 2026-05-31
 ---
 # Vault-Guide.md - Vault Guide for AI Agents
 
-Agent rules for operating in a personal markdown knowledge base. The vault's own structure and areas are described in its [[Vault-Manifest]].
+Agent rules for operating in a markdown knowledge base.
 
 ## Agent Instructions
 

@@ -1,4 +1,4 @@
 # CLAUDE.md - Vault Bootstrap
 
-@guides/Vault-Guide.md
+@../Resources/Vault/Guides/Vault-Guide.md
 @../Vault-Manifest.md

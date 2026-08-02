@@ -125,10 +125,11 @@ function Test-IsFolderNote {
     return $File.BaseName -eq $parentName
 }
 
-# True when $RelPath is a Guide doc: any file under .claude/guides/ (Vault-Guide.md,
+# True when $RelPath is a Guide doc: any file under Resources/Vault/Guides/ (Vault-Guide.md,
 # Document-Conventions.md, Vault-Organization.md, Skill-Dev.md, Frontmatter-Schema.md, and any
 # future addition to that folder) - the vault's structural agent-guide docs, the backend's
-# runtime-loaded guides tier. Path-based rather than parsed from the H1 "Filename.md -
+# runtime-loaded guides tier - or under .claude/guides/, which keeps the same set as the
+# portable template copies. Path-based rather than parsed from the H1 "Filename.md -
 # Description" heading, since that heading format is shared with folder notes (Test-IsFolderNote
 # already excludes those separately) and isn't a reliable Guide-doc-specific signal on its own.
 function Test-IsGuideDoc {
@@ -136,7 +137,7 @@ function Test-IsGuideDoc {
         [Parameter(Mandatory)][string]$RelPath
     )
     $relFwd = $RelPath -replace '\\', '/'
-    return $relFwd -match '(^|/)\.claude/guides/'
+    return $relFwd -match '(^|/)(\.claude/guides|Resources/Vault/Guides)/'
 }
 
 # True when $RelPath is a Templater template doc: any file under Resources/Vault/Templates/.

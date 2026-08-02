@@ -317,6 +317,10 @@ try {
         # it's a real authored document for Checks 1/2.
         New-ProvFile '.claude/guides/Some-Guide.md' "# Some-Guide.md - A Guide`n"
 
+        # T - Guide doc at the vault's own relocated guide set (Resources/Vault/Guides/):
+        # excluded from Check 3 for the same reason as N.
+        New-ProvFile 'Resources/Vault/Guides/Some-Guide.md' "# Some-Guide.md - A Guide`n"
+
         # O - pure Templater script (no markdown body at all): excluded from all three checks,
         # unlike an ordinary file under Templates/ (which stays in scope - it's a real doc).
         New-ProvFile 'Resources/Vault/Templates/Script-Only.md' "<%*`nconst x = 1;`n%>`n"
@@ -354,6 +358,8 @@ try {
             (-not $out.Contains("Missing 'doc.type:': Resources\Has-Type-Doc.md")) $out
         Assert-That 'N: Guide doc excluded from Check 3' `
             (-not $out.Contains("Missing 'doc.type:': .claude\guides\Some-Guide.md")) $out
+        Assert-That 'T: relocated Guide doc excluded from Check 3' `
+            (-not $out.Contains("Missing 'doc.type:': Resources\Vault\Guides\Some-Guide.md")) $out
         Assert-That 'O: pure Templater script excluded from Check 2 and Check 3' `
             (-not $out.Contains('Script-Only.md')) $out
         Assert-That 'S: template doc with pre-frontmatter script block excluded from Check 2 and Check 3' `

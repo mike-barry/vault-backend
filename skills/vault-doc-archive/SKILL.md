@@ -123,12 +123,15 @@ Note any filename changes (leading-date flip, date append) and frontmatter addit
 
 1. Inject `doc.created` / `doc.archived` / `doc.type` frontmatter into the source file in place, and strip any `use_skill:` `agent.instructions` entries — the routing directive goes stale once a doc is archived (frozen, never rewritten). Bare and `pinned:` entries are left untouched.
 2. Create `Archive/` in the destination folder if it does not exist (no folder note needed).
-3. Call `vault-doc-rename` at its **programmatic entry point** with the fully-resolved `OldPath` and `NewPath`. It moves the file and rewrites every wikilink reference under a single write lock, via the `mcp__vault__move` tool. The move is a **filesystem move, not a `git mv`** — nothing is staged or committed, and the archive lands in the working tree like any other edit; git enters only as recovery advice if a write fails partway.
-   - **`NewPath` must carry the source's `.md` extension**, since [[#Compute Destination]] always produces a `.md` filename. The tool preserves extensions and infers nothing, so a bare `Archive/Plan-My-Doc` is refused with `invalid_argument` rather than renamed.
-   - If the filename is unchanged (as-is move), `OldPath` and `NewPath` differ only in the folder segment and the tool reports `pureMove: true`. It still rewrites every path-qualified link to the doc; only the bare-link pass is skipped, and only when the basename is unique vault-wide.
-4. Report the result: file archived + N wikilinks updated in M files (`referencesRewritten` and `filesRewritten[]`), plus whatever `vault-doc-rename` flags — `referencesQualifiedProtectively` (bystander bare links pinned to full paths so the move doesn't change what they resolve to), `namingWarnings`, and `lockWarning` when present.
+3. Call `vault-doc-rename` at its **programmatic entry point** with the fully-resolved `OldPath` and `NewPath`. It moves the file and rewrites every wikilink reference under a single write lock, via the `vault move` command. The move is a **filesystem move, not a `git mv`** — nothing is staged or committed, and the archive lands in the working tree like any other edit; git enters only as recovery advice if a write fails partway.
+   - `NewPath` must be a full vault-relative path carrying the source's `.md` extension, which [[#Compute Destination]] already produces. A bare name lands at the vault root instead of renaming in place, and a path missing `.md` is refused with `invalid_path`.
+   - Step 2 must have run first. The move creates no folders, so if `Archive/` does not exist the call is refused with `parent_missing` and nothing is archived.
+   - If the filename is unchanged (as-is move), `OldPath` and `NewPath` differ only in the folder segment. Every path-qualified link to the doc is still rewritten, and the bare-link pass is skipped only where the basename stays unique vault-wide.
+4. Report the result: file archived, plus N wikilinks updated in M files, taken from `repaired_links[]` where N is the array length and M the number of distinct `path` values. Add `pinned_links[]` when non-empty, which holds bystander bare links pinned to full paths so the move does not change what they resolve to.
 
-There is no ambiguity failure to report: a basename collision succeeds via protective pinning rather than skipping a link. The one skip that can occur is `filesSkippedUnreadable[]` — notes the reference scan could not read. When it is non-empty, list those files: links inside them were **not** rewritten and need a manual check.
+There is no ambiguity failure to report, because a basename collision succeeds via protective pinning rather than skipping a link. An empty `repaired_links[]` is a normal, complete result, meaning nothing linked to the doc.
+
+Two refusals abort the archive after step 1 has already written the frontmatter: `invalid_name`, when the computed filename falls outside the vault's name grammar, and `dependency_unavailable`, when the reference scan cannot start. Nothing moved in either case, but the source file now carries its provenance frontmatter, so say so.
 
 ## Archive Compaction (on demand)
 

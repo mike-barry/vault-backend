@@ -1,0 +1,19 @@
+# Obsidian
+/.obsidian/appearance.json
+/.obsidian/graph.json
+
+# Obsidian workspace plugin
+/.obsidian/workspace.json
+/.obsidian/workspace-mobile.json
+/.obsidian/cache
+
+# Obsidian community plugins
+/.obsidian/community-plugins.json
+/.obsidian/plugins/file-explorer-plus/data.json
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Temp directory
+/.temp

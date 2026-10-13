@@ -10,7 +10,7 @@ Rules for creating and editing documents in this vault.
 When creating or significantly modifying any note:
 
 - Apply the heading, length, filename, dash, and wiki-link rules defined in this document
-- These rules must hold for the text you actually write, not just be satisfied by having read this doc earlier in the session — re-check against the rule at the point of writing, especially in long multi-file sessions. An existing file's current formatting (including a file you're using as a style or structural reference) is not a valid substitute for checking the written rule, since existing content may itself predate or violate it.
+- These rules must hold for the text you actually write, not just be satisfied by having read this doc earlier in the session - re-check against the rule at the point of writing, especially in long multi-file sessions. An existing file's current formatting (including a file you're using as a style or structural reference) is not a valid substitute for checking the written rule, since existing content may itself predate or violate it.
 - For creating or managing planning docs, corpus docs, idea docs, chat captures, and reading captures, use the `vault-docs` skill
 - For frontmatter rules (`nav.*` / `agent.*`) and when to apply them, see the `vault-agent-frontmatter` skill
 - Flag any existing violations you notice rather than silently fixing them outside the scope of the current task
@@ -69,9 +69,9 @@ Brevity is measured against what a cold reader needs, not against what is obviou
 
 Files in the root, project, or area's `Inbox/` subfolder use the `Type-Description[-YYYY-MM-DD].md` convention:
 
-- Lead with a type prefix drawn from the standard vocabulary: `Plan-`, `Idea-`, `Reading-`, `Chat-`, `Meeting-`, `Research-`, `Note-`. The list is open-ended — any `TypeName-` prefix is valid.
+- Lead with a type prefix drawn from the standard vocabulary: `Plan-`, `Idea-`, `Reading-`, `Chat-`, `Meeting-`, `Research-`, `Note-`. The list is open-ended - any `TypeName-` prefix is valid.
 - Append a trailing date when the date is meaningful: `Type-Description-YYYY-MM-DD.md`. Meetings and chats always get a date.
-- The one exception to the leading-prefix pattern is the `-Implement` suffix on a planning doc's disposable working file (`Plan-<Description>-Implement.md`) — a suffix modifier rather than a type prefix, since it names a temporary artifact of an existing plan rather than a new doc type. See the `vault-docs` skill's `implement-doc.md` for its shape and lifecycle.
+- The one exception to the leading-prefix pattern is the `-Implement` suffix on a planning doc's disposable working file (`Plan-<Description>-Implement.md`) - a suffix modifier rather than a type prefix, since it names a temporary artifact of an existing plan rather than a new doc type. See the `vault-docs` skill's `implement-doc.md` for its shape and lifecycle.
 
 Examples: `Plan-Auth-Redesign.md`, `Reading-RAG-Mistakes-In-Production.md`, `Meeting-Project-Kickoff-2026-06-28.md`
 
@@ -81,8 +81,8 @@ Every authored document carries these frontmatter fields. Structural files (fold
 
 | Field | Value |
 |-------|-------|
-| `doc.created` | `YYYY-MM-DD` — the document's capture date |
-| `doc.archived` | `YYYY-MM-DD` — the date the file arrived in `Archive/` |
+| `doc.created` | `YYYY-MM-DD` - the document's capture date |
+| `doc.archived` | `YYYY-MM-DD` - the date the file arrived in `Archive/` |
 | `doc.type` | Title-Case single word from `vault-doc-archive`'s Known-Types table |
 
 ## Dashes
@@ -91,10 +91,10 @@ Use standard hyphens (`-`, U+002D) for all dashes in note content. When adding o
 
 | Character | Unicode | Name |
 |-----------|---------|------|
-| – | U+2013 | En dash |
-| — | U+2014 | Em dash |
-| ― | U+2015 | Horizontal bar |
-| ‒ | U+2012 | Figure dash |
+| - | U+2013 | En dash |
+| - | U+2014 | Em dash |
+| - | U+2015 | Horizontal bar |
+| - | U+2012 | Figure dash |
 
 ## Line Wrapping
 

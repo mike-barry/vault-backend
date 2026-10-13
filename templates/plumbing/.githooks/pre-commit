@@ -1,0 +1,291 @@
+#!/bin/sh
+#
+# Makes files agree with the line endings their repository declares.
+#
+# The target is read from the repo's own .gitattributes via `git check-attr`, so this
+# script carries no configuration and works unchanged in a repo enforcing LF and one
+# enforcing CRLF.
+#
+# Git invokes this with no arguments, which normalizes everything staged for commit and
+# re-stages whatever changed. It can also be run by hand against specific files, which is
+# the escape hatch for a file written by a shell command between commits:
+#
+#     .githooks/pre-commit path/to/file
+#
+# A file is converted only when the repo declares an `eol` for it, and only when git would
+# convert it too. Under `text=auto` git treats a file as binary, and refuses conversion, if
+# it holds a NUL byte or a CR that is not part of a CRLF; this applies the same rules. Under
+# an explicit `text` git converts regardless of content, and so does this. Also left alone:
+# files marked binary, files with `text` unset, files with no declared `eol`, symlinks,
+# files that cannot be read or written, and this script itself.
+#
+# This never blocks a commit. Anything it cannot do, it reports on stderr rather than
+# failing silently.
+#
+# The file work is done in Perl rather than sed, because MSYS sed translates line endings
+# when it reads, so it cannot see a file's actual bytes. Perl in binmode can, and doing the
+# whole commit in one process rather than a pipeline per file is also considerably faster.
+#
+# See README.md for the limitations that are known and deliberately not handled.
+#
+# When testing, measure CR bytes rather than grepping for them. `grep -c $'\r'` reports 0
+# on a CRLF file under Git Bash, for the same translation reason. Use
+# `tr -cd '\r' < <file> | wc -c`, which counts actual bytes.
+
+set -u
+
+warn() { printf 'line endings: %s\n' "$*" >&2; }
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+[ -n "$repo_root" ] || exit 0
+
+for tool in perl awk; do
+    command -v "$tool" >/dev/null 2>&1 || { warn "$tool not found, nothing normalized"; exit 0; }
+done
+
+# Resolve this script's own path now, before the cd below. A relative $0 would otherwise
+# resolve against the wrong directory and the self-skip would silently stop working.
+self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || self_dir=''
+self=''
+[ -n "$self_dir" ] && self="$self_dir/$(basename -- "$0")"
+
+tmp_map=''; tmp_add=''; tmp_attr=''; tmp_held=''; tmp_paths=''
+cleanup() { rm -f "$tmp_map" "$tmp_add" "$tmp_attr" "$tmp_held" "$tmp_paths"; }
+trap cleanup EXIT
+trap 'cleanup; exit 0' INT TERM HUP
+for v in tmp_map tmp_add tmp_attr tmp_held tmp_paths; do
+    t=$(mktemp 2>/dev/null) || { warn "could not create temp file, nothing normalized"; exit 0; }
+    eval "$v=\$t"
+done
+
+# Turns the path list in $tmp_paths into "<eol><TAB><textmode><TAB><path>" lines on
+# $tmp_map. The eol and mode come first so a path containing a tab survives the split.
+# What `eol=native` resolves to, which is core.eol when set and the platform default
+# otherwise. Git applies the same rule.
+native_eol=$(git config --get core.eol 2>/dev/null) || native_eol=''
+case "$native_eol" in
+    lf|crlf) ;;
+    *) case "$(uname -s 2>/dev/null)" in
+           MINGW*|MSYS*|CYGWIN*) native_eol=crlf ;;
+           *)                    native_eol=lf ;;
+       esac ;;
+esac
+
+run_check_attr() {
+    git -c core.quotePath=false check-attr --stdin text eol working-tree-encoding \
+        < "$1" > "$tmp_attr" 2>/dev/null
+}
+
+parse_attr() {
+    awk -v native="$native_eol" -F': ' '
+        {
+            # "<path>: <attribute>: <value>", and the path may itself contain ": ",
+            # so rebuild it from everything except the last two fields.
+            path = $1
+            for (i = 2; i <= NF - 2; i++) path = path ": " $i
+
+            # A leading quote means git had to escape the name (a tab, newline, or quote
+            # in it). Unquoting here would name a different file, so refuse.
+            if (substr(path, 1, 1) == "\"") {
+                if (!(path in warned)) {
+                    print "line endings: skipping " path ", the name needs quoting" > "/dev/stderr"
+                    warned[path] = 1
+                }
+                next
+            }
+            attr[path SUBSEP $(NF - 1)] = $NF
+            seen[path] = 1
+        }
+        END {
+            for (p in seen) {
+                # Only `text` and `eol` decide conversion. `binary` is a macro for
+                # "-diff -merge -text", and a later rule can set text back, so testing
+                # it here would skip files git does convert.
+                t = attr[p SUBSEP "text"]
+                if (t == "unset") continue
+
+                # Git converts line endings on the decoded text for these, while this
+                # sees raw bytes. Rewriting them injects CRs into the middle of a
+                # character stream, so refuse outright.
+                w = attr[p SUBSEP "working-tree-encoding"]
+                if (w != "unspecified" && w != "unset") {
+                    print "line endings: skipping " p ", it declares working-tree-encoding" > "/dev/stderr"
+                    continue
+                }
+
+                e = attr[p SUBSEP "eol"]
+                if (e == "native") e = native
+                if (e == "lf" || e == "crlf") printf "%s\t%s\t%s\n", e, t, p
+                else if (e != "unspecified")
+                    print "line endings: unsupported eol=" e " for " p > "/dev/stderr"
+            }
+        }' "$tmp_attr" >> "$tmp_map"
+}
+
+build_map() {
+    [ -s "$tmp_paths" ] || return 0
+    if run_check_attr "$tmp_paths"; then
+        parse_attr
+        return 0
+    fi
+    # check-attr aborts the whole batch on the first path it cannot parse, which would
+    # leave every later path silently unprocessed. Retry one at a time so a single bad
+    # name costs only itself.
+    warn "git could not read attributes for the whole batch, retrying one file at a time"
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        printf '%s\n' "$p" > "$tmp_attr.one"
+        if run_check_attr "$tmp_attr.one"; then
+            parse_attr
+        else
+            warn "no attributes for $p"
+        fi
+    done < "$tmp_paths"
+    rm -f "$tmp_attr.one"
+}
+
+if [ "$#" -gt 0 ]; then
+    verbose=1
+    : > "$tmp_paths"
+    for arg in "$@"; do
+        [ "$arg" = "--" ] && continue
+        case "$arg" in
+            '"'*) warn "skipping $arg, a leading quote would be read as a git-quoted name"
+                  continue ;;
+            [A-Za-z]:\\*) arg=$(printf '%s' "$arg" | tr '\\' '/') ;;
+        esac
+        if [ -d "$arg" ]; then
+            warn "not a regular file: $arg"
+        elif [ ! -f "$arg" ]; then
+            warn "no such file: $arg"
+        else
+            printf '%s\n' "$arg" >> "$tmp_paths"
+        fi
+    done
+    build_map
+else
+    verbose=0
+    # Hooks already run from the repo root, but a manual no-argument run may not.
+    cd "$repo_root" || exit 0
+
+    # If either listing fails, treat every staged file as held rather than none. The
+    # unsafe direction here would rewrite and re-stage work deliberately kept back.
+    if ! git -c core.quotePath=false diff --name-only 2>/dev/null > "$tmp_held"; then
+        warn "could not list unstaged changes, nothing normalized"
+        exit 0
+    fi
+    # R and T included so renames and type changes are not skipped.
+    if ! git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMRT 2>/dev/null > "$tmp_paths"; then
+        warn "could not list staged changes, nothing normalized"
+        exit 0
+    fi
+    build_map
+fi
+
+# One pass over every file. Perl reads and writes in binmode, so the bytes it sees are the
+# bytes on disk. The held list is filtered here rather than earlier, so a file with no eol
+# rule is never announced as skipped when it was never a candidate.
+perl -e '
+    use Fcntl qw(O_WRONLY O_CREAT O_EXCL);
+    my ($map, $addlist, $self, $heldfile, $verbose) = @ARGV;
+    my $warn = sub { print STDERR "line endings: $_[0]\n" };
+    my $note = sub { $warn->($_[0]) if $verbose };
+
+    my ($m, $a);
+    unless (open($m, "<", $map)) { $warn->("cannot read work list"); exit 0 }
+    unless (open($a, ">", $addlist)) { $warn->("cannot write re-stage list"); exit 0 }
+    binmode($a);
+
+    my %held;
+    if (length $heldfile && open(my $h, "<", $heldfile)) {
+        while (my $l = <$h>) { $l =~ s/\r?\n\z//; $held{$l} = 1 if length $l }
+        close($h);
+    }
+
+    # sh reads this script incrementally by byte offset, so rewriting it while it runs
+    # makes the shell resume at the wrong place. Compared by device and inode rather than
+    # path text, because the same file reached by a different spelling is the same file.
+    my @self_st = defined $self && length $self ? stat($self) : ();
+
+    while (my $line = <$m>) {
+        $line =~ s/\r?\n\z//;
+        my ($eol, $mode, $path) = split(/\t/, $line, 3);
+        next unless defined $path && length $path;
+        next unless $eol eq "lf" || $eol eq "crlf";
+
+        if ($held{$path}) { $warn->("skipped $path (unstaged changes present)"); next }
+        if (-l $path)     { $note->("skipping $path, it is a symlink"); next }
+        unless (-f $path) { $note->("not a regular file: $path"); next }
+
+        my @st = stat($path);
+        if (@self_st && @st && $st[1] && $st[0] == $self_st[0] && $st[1] == $self_st[1]) {
+            $warn->("skipping $path, it is the running hook");
+            next;
+        }
+
+        my $fh;
+        unless (open($fh, "<", $path)) { $warn->("cannot read $path"); next }
+        binmode($fh);
+        my $content = do { local $/; <$fh> };
+        close($fh);
+        unless (defined $content && length $content) { $note->("nothing to do for $path (empty)"); next }
+
+        # Under text=auto git calls this binary and refuses; under an explicit text it
+        # converts regardless. Match whichever applies so the worktree cannot drift from
+        # what git puts in the index.
+        if ($mode eq "auto") {
+            if (index($content, "\0") >= 0)  { $note->("skipping $path, it holds a NUL byte"); next }
+            if ($content =~ /\r(?!\n)/)      { $note->("skipping $path, it holds a lone CR"); next }
+            # git also calls a file binary when non-printable bytes outweigh printable
+            # ones by more than 1:128. CR and LF count as neither, and backspace, tab,
+            # formfeed and escape count as printable, which is git own classification.
+            my $nonprintable = ($content =~ tr/\x01-\x07\x0b\x0e-\x1a\x1c-\x1f\x7f//);
+            my $printable    = ($content =~ tr/\x08\x09\x0c\x1b\x20-\x7e\x80-\xff//);
+            if (($printable >> 7) < $nonprintable) {
+                $note->("skipping $path, git classes it binary by byte content");
+                next;
+            }
+        }
+
+        my $new = $content;
+        # A run of CRs before a newline collapses in one step. A single non-overlapping
+        # pass would turn "\r\r\n" into "\r\n", which git then converts again when the
+        # file is re-staged, leaving the working tree one CR ahead of the index forever.
+        $new =~ s/\r+\n/\n/g;
+        $new =~ s/\n/\r\n/g if $eol eq "crlf";
+        if ($new eq $content) { $note->("already correct: $path"); next }
+
+        # Write a sibling and rename over the original. Writing in place would truncate
+        # first, so a write that failed partway would destroy the file while the commit
+        # still succeeded with the old blob. O_EXCL so a pre-created name cannot redirect
+        # the write, and the mode is set before any content lands in it.
+        my $tmp = $path . ".eol-tmp-" . $$;
+        my $out;
+        unless (sysopen($out, $tmp, O_WRONLY | O_CREAT | O_EXCL, 0600)) {
+            $warn->("cannot write $path");
+            next;
+        }
+        binmode($out);
+        chmod(($st[2] & 07777), $tmp) if @st;
+        unless (print $out $new) { close($out); unlink($tmp); $warn->("write failed for $path"); next }
+        unless (close($out))     { unlink($tmp); $warn->("write failed for $path"); next }
+        unless (rename($tmp, $path)) { unlink($tmp); $warn->("could not replace $path"); next }
+
+        print "line endings normalized: $path\n";
+        print $a $path, "\0";
+    }
+' "$tmp_map" "$tmp_add" "$self" "$tmp_held" "$verbose"
+
+if [ "$verbose" -eq 0 ] && [ -s "$tmp_add" ]; then
+    # --literal-pathspecs is load-bearing. Without it a filename containing [ ] * or ?
+    # is treated as a glob, which stages unrelated files the user never asked to commit.
+    if ! git --literal-pathspecs add --pathspec-from-file="$tmp_add" --pathspec-file-nul 2>/dev/null; then
+        # One unusable path would otherwise cost every other file its stat refresh.
+        tr '\0' '\n' < "$tmp_add" | while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            git --literal-pathspecs add -- "$f" 2>/dev/null || warn "could not re-stage $f"
+        done
+    fi
+fi
+
+exit 0

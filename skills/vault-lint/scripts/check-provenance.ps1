@@ -85,10 +85,12 @@ $provenanceExcludeFiles = @('Tasks.md', 'CLAUDE.md', 'Vault-Manifest.md')
 # Top-level Tasks/ holds vault-tasks' Obsidian Tasks-plugin dashboard views (Active/Backlog/
 # Blocked.md per area) - skill-owned query files, not authored documents, same reasoning as
 # the Tasks.md exclusion above but expressed as a folder since the filenames differ per status.
+# .claude\templates holds the new-vault scaffold seeds (structural, like guides and folder notes)
+# and .githooks\README.md documents the plumbing hook - neither is an authored vault document.
 # The hidden-folder scan (below) exists to cover the backend guides tier (.claude\guides);
 # other hidden content is not authored vault documents: skill docs are harness contract,
 # .myai is external tooling, .vault holds skill output data (e.g. rendered transcripts).
-$provenanceExcludePaths = @('Tasks', '.claude\skills', '.myai', '.vault', '.pytest_cache')
+$provenanceExcludePaths = @('Tasks', '.claude\skills', '.claude\templates', '.githooks', '.myai', '.vault', '.pytest_cache')
 
 $repaired       = @()  # Check 1: created/archived recovered - written if -Update, previewed otherwise
 $manual         = @()  # Check 1: recovery chain exhausted, needs a human

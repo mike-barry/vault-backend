@@ -1,0 +1,15 @@
+# Filename segments exempt from the Title-Case check in check-filename-conventions.ps1
+# (the lint tool's filename-conventions pass). One segment per line; '#' starts a comment.
+# Blank lines are ignored. Matching is case-sensitive - these are exact segment spellings.
+#
+# For brand names, proper nouns, and file-extension references whose internal capitalization
+# deviates from Title-Case. Managed through the lint_suppressions tool (list:
+# filename-exceptions); the generic minor words (of/and/the...) are English title-case
+# convention rather than vault-specific judgment and stay in lint-common.ps1's
+# $titleLowercaseWords.
+
+# Brand name: starts with a lowercase 'i'.
+iCloud
+
+# Literal file-extension reference, e.g. Reading-...-CLAUDE-md-... naming "CLAUDE.md".
+md

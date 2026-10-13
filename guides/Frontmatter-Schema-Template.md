@@ -30,7 +30,7 @@ Flat, dot-namespaced keys. The whole scope today is `agent.*` and `nav.*`. The `
 
 Path-independence is a schema-level property of `pinned:` and `use_skill:` entries - it does not need restating in each instruction's text. Frozen-ness is per-item, not per-field: a bare-string sibling in the same `agent.instructions` list stays revisable while a `pinned:`/`use_skill:` entry next to it is frozen.
 
-**Archived-doc exception.** A `use_skill:` entry's freeze is not absolute: it holds only while the file is live. `vault-doc-archive` strips any `use_skill:` entry at archive time (`vault-lint`'s Check 4 catches drift on files archived before that behavior existed) - the routing directive only means something while the file can still be edited through its owning skill, and an archived doc is frozen and never rewritten by any path. Bare and `pinned:` entries are not touched by this - `pinned:` is human intent, not skill routing, and stays meaningful regardless of lifecycle state. See [[Artifact-Storage]] and [[Lint-System]]'s Provenance Check section.
+**Archived-doc exception.** A `use_skill:` entry's freeze is not absolute: it holds only while the file is live. `vault-doc-archive` strips any `use_skill:` entry at archive time (`vault-lint`'s Check 4 catches drift on files archived before that behavior existed) - the routing directive only means something while the file can still be edited through its owning skill, and an archived doc is frozen and never rewritten by any path. Bare and `pinned:` entries are not touched by this - `pinned:` is human intent, not skill routing, and stays meaningful regardless of lifecycle state. See the artifact-storage and lint-system corpus docs of the vault that develops the backend, in particular the lint provenance check.
 
 ### `nav.*` - navigation layer
 
@@ -91,7 +91,7 @@ A folder entry declares *what the folder holds* and *when the scope is relevant*
     - **A qualified link must be a real path suffix of the target file, not a folder path.** A folder note lives at `<Folder>/<Folder>.md`, so the path to it ends in the doubled segment: link to `Projects/Projects.md` as `[[Projects/Projects]]`, never `[[Projects]]` (that points at the *folder* and does not resolve - Obsidian silently falls back to bare-basename matching).
 - **Grouping is encoded in the link path, not a separate field.** A curated sub-collection (e.g. the `Corpus/` collection) is expressed by path-qualified links (`[[Corpus/Task-System]]`); an agent buckets entries by their link's path segment. There is no `group:` key - the folder path *is* the grouping and cannot drift from a label.
 - **Ephemeral folders get *only* a `folder` entry - never an individual `link` spotlight for a doc inside them.** This covers `Inbox/`, `Archive/`. No spotlighting a "currently active" doc (e.g. the in-flight plan) as its own `nav.contents` entry - that creates a dangling link a human must remember to retire at archive time, and the folder entry already routes the agent in. Durable, stable sub-collections like `Corpus/` are the contrast: each member gets its own `link` precisely because they do not churn. The discriminator is *permanence of the contents*, not the folder.
-- **In-folder file selection needs no schema support.** Inside a `folder` entry's scope, the `YYYY-MM-DD-Type-Title` artifact name ([[Artifact-Storage]]) is the recency/selection heuristic - the date prefix doubles as the sort key.
+- **In-folder file selection needs no schema support.** Inside a `folder` entry's scope, the `YYYY-MM-DD-Type-Title` artifact name (the artifact-storage naming convention) is the recency/selection heuristic - the date prefix doubles as the sort key.
 
 ## Standard-Folder Completeness
 
@@ -172,5 +172,5 @@ agent.instructions:
 
 ## Deferred (reserved, not yet implemented)
 
-- **`graph.*`** - a machine-maintained structural layer (forward links, entities). When built it begins as provisional `graph.*` frontmatter, kept clean so a later export to a sidecar store is a one-line prefix filter. Owned by a future watcher/dreamer. See [[Idea-Vault-Watcher-Dreamer]] and [[Idea-Sidecar-Graph-Store]].
+- **`graph.*`** - a machine-maintained structural layer (forward links, entities). When built it begins as provisional `graph.*` frontmatter, kept clean so a later export to a sidecar store is a one-line prefix filter. Owned by a future watcher/dreamer; the idea docs for it live in the vault that develops the backend.
 - **`id`** - a rename-stable per-note join key, generated only once a sidecar/watcher/dreamer needs it. Generation scheme and field name (`id` vs `uid`) are open.

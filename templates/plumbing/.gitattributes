@@ -1,0 +1,17 @@
+# Normalize all text files to LF everywhere - both in the repo and on checkout.
+* text=auto eol=lf
+
+# Binary types: never touch line endings.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.pdf  binary
+*.zip  binary
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.mp3  binary
+*.mp4  binary
+*.ico  binary

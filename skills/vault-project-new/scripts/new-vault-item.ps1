@@ -31,7 +31,7 @@ $VaultRoot   = if ($VaultRootOverride) { $VaultRootOverride.TrimEnd('\') + '\' }
                else { Get-VaultRoot -StartPath $PSScriptRoot }
 $templateDir = Join-Path $_skillDir 'templates'
 
-$NamePattern = '^[A-Z][a-zA-Z0-9]*(-[A-Z][a-zA-Z0-9]*)*$'
+$NamePattern = '^[A-Z0-9][a-zA-Z0-9]*(-[A-Z0-9][a-zA-Z0-9]*)*$'
 
 # --- Validate ---
 if ($Name -cnotmatch $NamePattern) {

@@ -7,7 +7,7 @@ $_skillDir = if ($env:CLAUDE_SKILL_DIR) { $env:CLAUDE_SKILL_DIR } else { Split-P
 # .claude\guides is the backend guides tier - vault-convention content that lints like any
 # other; the rest of .claude (skills, settings) is harness contract and stays out of scope.
 $includeFolders = @('Archive', 'Areas', 'Projects', 'Resources', '.claude\guides')
-$excludeFiles   = @('Document-Conventions.md')
+$excludeFiles   = @('Document-Conventions.md', 'Document-Conventions-Template.md')
 # Vault-relative directory paths to skip entirely (and their subfolders). Templates
 # contain literal placeholders like [[Note-Name]] that would otherwise be flagged.
 $excludePaths   = @('Resources\Vault\Templates')

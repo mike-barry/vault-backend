@@ -8,6 +8,7 @@ Seed files for standing up a new vault on this backend. Each `*-Template.md` is 
 | `Areas-Template.md` | `Areas/Areas.md` |
 | `Projects-Template.md` | `Projects/Projects.md` |
 | `Archive-Template.md` | `Archive/Archive.md` |
+| `Resources-Template.md` | `Resources/Resources.md` |
 | `Vault-Template.md` | `Resources/Vault/Vault.md` |
 | `Guides-Template.md` | `Resources/Vault/Guides/Guides.md` |
 | `Modes-Template.md` | `Resources/Vault/Modes/Modes.md` |

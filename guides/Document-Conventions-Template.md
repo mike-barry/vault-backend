@@ -9,7 +9,7 @@ Rules for creating and editing documents in this vault.
 
 When creating or significantly modifying any note:
 
-- Apply the heading, filename, dash, and wiki-link rules defined in this document
+- Apply the heading, length, filename, dash, and wiki-link rules defined in this document
 - These rules must hold for the text you actually write, not just be satisfied by having read this doc earlier in the session — re-check against the rule at the point of writing, especially in long multi-file sessions. An existing file's current formatting (including a file you're using as a style or structural reference) is not a valid substitute for checking the written rule, since existing content may itself predate or violate it.
 - For creating or managing planning docs, corpus docs, idea docs, chat captures, and reading captures, use the `vault-docs` skill
 - For frontmatter rules (`nav.*` / `agent.*`) and when to apply them, see the `vault-agent-frontmatter` skill
@@ -52,6 +52,12 @@ Use 4 spaces per nesting level for nested list items. This applies to both plain
 ```
 
 Obsidian's Tasks plugin requires 4-space indentation to recognize a nested item as a sub-task; 2-space indentation is not rendered correctly.
+
+## Length
+
+Match a document's length to its substance. Cover what the task needs, then stop - no padding with filler sections, redundant summaries, restated context, or boilerplate. A doc that repeats its own content in a closing summary is too long by that summary.
+
+Brevity is measured against what a cold reader needs, not against what is obvious right now. This matters most for corpus docs, which are maintained reference read fresh in later sessions. Context that feels redundant while writing is often load-bearing on the next read. Keep it when a reader without the current conversation would need it; cut it when it only restates what the doc already says.
 
 ## Filenames
 

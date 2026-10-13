@@ -91,10 +91,10 @@ Use standard hyphens (`-`, U+002D) for all dashes in note content. When adding o
 
 | Character | Unicode | Name |
 |-----------|---------|------|
-| - | U+2013 | En dash |
-| - | U+2014 | Em dash |
-| - | U+2015 | Horizontal bar |
-| - | U+2012 | Figure dash |
+| – | U+2013 | En dash |
+| — | U+2014 | Em dash |
+| ― | U+2015 | Horizontal bar |
+| ‒ | U+2012 | Figure dash |
 
 ## Line Wrapping
 

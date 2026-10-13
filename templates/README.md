@@ -13,6 +13,7 @@ Seed files for standing up a new vault on this backend. Each `*-Template.md` is 
 | `Guides-Template.md` | `Resources/Vault/Guides/Guides.md` |
 | `Modes-Template.md` | `Resources/Vault/Modes/Modes.md` |
 | `plumbing/.gitignore`, `.gitattributes`, `.githooks/` | vault root; then `git config core.hooksPath .githooks` |
+| `lint-state/*.txt` | `.vault/state/vault-lint/` |
 
 The guide docs themselves come from `../guides/*-Template.md`, copied the same way into `Resources/Vault/Guides/`.
 

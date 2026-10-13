@@ -1,0 +1,4 @@
+# Vault-relative subfolder paths that are intentionally unreferenced in their parent folder
+# note. One path per line (forward slashes); '#' starts a comment.
+# These suppress 'Unreferenced non-standard subfolder' findings without requiring a nav entry.
+

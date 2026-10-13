@@ -1,0 +1,27 @@
+# Known-broken wiki-links to suppress from check-broken-wikilinks.ps1.
+#
+# GLOBAL IGNORES (this section — before any [path:...] header)
+# One note name per line (the target inside [[...]], without path, #anchor, or |alias).
+# Matching is case-insensitive. Blank lines and lines starting with '#' are ignored;
+# an inline '#' starts a trailing comment.
+#
+# PATH-SCOPED IGNORES
+# A [path:vault/relative/prefix] header starts a scoped section. Names listed under
+# that header are suppressed only when the broken link appears in a file whose
+# vault-relative path starts with that prefix. Multiple [path:...] sections are allowed.
+# Example:
+#   [path:Areas/Vault-Dev/]
+#   Some-Placeholder-Note    # only suppressed inside Areas/Vault-Dev/
+#
+# Only add a target here when the broken link is intentional and you want to stop the
+# linter flagging it -- e.g. a placeholder note you have not created yet, or a link
+# kept for documentation purposes. Real breaks should be fixed, not ignored.
+#
+# Example:
+#   Some-Planned-Note        # placeholder, note intentionally not created yet
+
+# Sentinel target for the Broken-Link convention: in an archived doc, a link to a since-
+# deleted note is rewritten as [[Broken-Link|Original-Name]] -- the original name stays
+# readable as display text while the target resolves to this intentionally-broken sentinel.
+Broken-Link
+

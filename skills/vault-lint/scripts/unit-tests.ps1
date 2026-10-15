@@ -9,6 +9,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\lint-common.ps1"
+
+# Relative paths in script output use the OS separator ('\' on Windows, '/' on Linux), so
+# expected strings are built with it rather than a literal backslash.
+$s = [System.IO.Path]::DirectorySeparatorChar
 . (Join-Path $PSScriptRoot '..' '..' '_shared' 'vault-test-common.ps1')
 
 $vaultRoot = Get-VaultRoot $PSScriptRoot
@@ -165,10 +169,10 @@ try {
         New-Item -ItemType Directory -Path $hiddenDir | Out-Null
         [System.IO.File]::WriteAllText((Join-Path $hiddenDir 'Secret.md'), 'x', $Utf8NoBom)
 
-        $default = Get-VaultMarkdownFiles -VaultRoot ($hiddenRoot + '\')
+        $default = Get-VaultMarkdownFiles -VaultRoot (Format-VaultRoot $hiddenRoot)
         Assert-That 'default full scan skips dot-prefixed folder' (-not ($default | Where-Object { $_.Name -eq 'Secret.md' })) ($default | ForEach-Object { $_.Name })
 
-        $withHidden = @(Get-VaultMarkdownFiles -VaultRoot ($hiddenRoot + '\') -IncludeHiddenFolders)
+        $withHidden = @(Get-VaultMarkdownFiles -VaultRoot (Format-VaultRoot $hiddenRoot) -IncludeHiddenFolders)
         Assert-That 'IncludeHiddenFolders switch includes dot-prefixed folder' (@($withHidden | Where-Object { $_.Name -eq 'Secret.md' }).Count -eq 1) ($withHidden | ForEach-Object { $_.Name })
         Assert-That 'IncludeHiddenFolders switch still includes visible file'  (@($withHidden | Where-Object { $_.Name -eq 'Visible.md' }).Count -eq 1) ($withHidden | ForEach-Object { $_.Name })
     } finally {
@@ -335,41 +339,41 @@ try {
         $out = Invoke-Provenance
 
         Assert-That 'A: both-present file is not flagged'         (-not $out.Contains('Both-Present')) $out
-        Assert-That 'B: created backfilled from filename date'    ($out.Contains('Would repair: Archive\Note-2020-03-05.md (doc.created: 2020-03-05)')) $out
-        Assert-That 'C: created backfilled from git added-date'   ($out.Contains('Would repair: Projects\Sample\Archive\Plain-Note.md (doc.created: 2020-04-15)')) $out
-        Assert-That 'D: archived backfilled from rename crossing' ($out.Contains('Would repair: Areas\Test\Archive\Cross-Note.md (doc.archived: 2020-05-10)')) $out
+        Assert-That 'B: created backfilled from filename date'    ($out.Contains("Would repair: Archive${s}Note-2020-03-05.md (doc.created: 2020-03-05)")) $out
+        Assert-That 'C: created backfilled from git added-date'   ($out.Contains("Would repair: Projects${s}Sample${s}Archive${s}Plain-Note.md (doc.created: 2020-04-15)")) $out
+        Assert-That 'D: archived backfilled from rename crossing' ($out.Contains("Would repair: Areas${s}Test${s}Archive${s}Cross-Note.md (doc.archived: 2020-05-10)")) $out
         Assert-That 'E: regression - archived is the crossing date, not the compaction date' `
-            ($out.Contains('Would repair: Areas\Test\Archive\2020-06\Compact-Note.md (doc.archived: 2020-06-05)') -and -not $out.Contains('doc.archived: 2020-07-01')) $out
+            ($out.Contains("Would repair: Areas${s}Test${s}Archive${s}2020-06${s}Compact-Note.md (doc.archived: 2020-06-05)") -and -not $out.Contains('doc.archived: 2020-07-01')) $out
         Assert-That 'F: direct-add - created repaired, archived flagged manual' `
-            ($out.Contains('Would repair: Archive\Direct-Add.md (doc.created: 2020-08-12)') -and $out.Contains('Manual resolution needed: Archive\Direct-Add.md (missing: doc.archived)')) $out
+            ($out.Contains("Would repair: Archive${s}Direct-Add.md (doc.created: 2020-08-12)") -and $out.Contains("Manual resolution needed: Archive${s}Direct-Add.md (missing: doc.archived)")) $out
         Assert-That 'G: fully untracked file needs manual resolution for both fields' `
-            ($out.Contains('Manual resolution needed: Archive\Untracked-Note.md (missing: doc.created, doc.archived)')) $out
+            ($out.Contains("Manual resolution needed: Archive${s}Untracked-Note.md (missing: doc.created, doc.archived)")) $out
         Assert-That 'H: non-archive file missing created flagged in Check 2' `
-            ($out.Contains("Missing 'doc.created:': Resources\Regular-Doc.md")) $out
+            ($out.Contains("Missing 'doc.created:': Resources${s}Regular-Doc.md")) $out
         Assert-That 'I: folder note excluded entirely'              (-not $out.Contains('SubDir')) $out
         Assert-That 'J: Tasks.md excluded entirely'                 (-not $out.Contains('Tasks.md')) $out
-        Assert-That 'K: top-level Tasks/ folder excluded entirely'  (-not $out.Contains('Tasks\Active.md')) $out
+        Assert-That 'K: top-level Tasks/ folder excluded entirely'  (-not $out.Contains("Tasks${s}Active.md")) $out
         Assert-That 'Check 1 repairs are not double-reported by Check 2' `
-            (-not $out.Contains("Missing 'doc.created:': Archive\Note-2020-03-05.md") -and
-             -not $out.Contains("Missing 'doc.created:': Projects\Sample\Archive\Plain-Note.md")) $out
+            (-not $out.Contains("Missing 'doc.created:': Archive${s}Note-2020-03-05.md") -and
+             -not $out.Contains("Missing 'doc.created:': Projects${s}Sample${s}Archive${s}Plain-Note.md")) $out
         Assert-That 'L: non-Guide file missing doc.type flagged in Check 3' `
-            ($out.Contains("Missing 'doc.type:': Resources\No-Type-Doc.md")) $out
+            ($out.Contains("Missing 'doc.type:': Resources${s}No-Type-Doc.md")) $out
         Assert-That 'M: file with existing doc.type not flagged in Check 3' `
-            (-not $out.Contains("Missing 'doc.type:': Resources\Has-Type-Doc.md")) $out
+            (-not $out.Contains("Missing 'doc.type:': Resources${s}Has-Type-Doc.md")) $out
         Assert-That 'N: Guide doc excluded from Check 3' `
-            (-not $out.Contains("Missing 'doc.type:': .claude\guides\Some-Guide.md")) $out
+            (-not $out.Contains("Missing 'doc.type:': .claude${s}guides${s}Some-Guide.md")) $out
         Assert-That 'T: relocated Guide doc excluded from Check 3' `
-            (-not $out.Contains("Missing 'doc.type:': Resources\Vault\Guides\Some-Guide.md")) $out
+            (-not $out.Contains("Missing 'doc.type:': Resources${s}Vault${s}Guides${s}Some-Guide.md")) $out
         Assert-That 'O: pure Templater script excluded from Check 2 and Check 3' `
             (-not $out.Contains('Script-Only.md')) $out
         Assert-That 'S: template doc with pre-frontmatter script block excluded from Check 2 and Check 3' `
             (-not $out.Contains('Meeting-Template.md')) $out
         Assert-That 'P: archived file with stale use_skill: flagged in Check 4' `
-            ($out.Contains('Would strip: Archive\Stale-Skill.md')) $out
+            ($out.Contains("Would strip: Archive${s}Stale-Skill.md")) $out
         Assert-That 'Q: archived file with only bare/pinned entries not flagged in Check 4' `
             (-not $out.Contains('Clean-Skill.md')) $out
         Assert-That 'R: archived file missing created and carrying stale use_skill: flagged in both Check 1 and Check 4' `
-            ($out.Contains('Would repair: Archive\Both-Stale.md (doc.created: 2020-09-01)') -and $out.Contains('Would strip: Archive\Both-Stale.md')) $out
+            ($out.Contains("Would repair: Archive${s}Both-Stale.md (doc.created: 2020-09-01)") -and $out.Contains("Would strip: Archive${s}Both-Stale.md")) $out
 
         # -Update actually writes the recovered values, preserves existing fields, writes
         # no BOM, and never touches Check 2's report-only candidates.

@@ -19,7 +19,7 @@ $ErrorActionPreference = 'Stop'
 $_skillDir = if ($env:CLAUDE_SKILL_DIR) { $env:CLAUDE_SKILL_DIR } else { Split-Path $PSScriptRoot -Parent }
 . (Join-Path $_skillDir '..' '_shared' 'vault-common.ps1')
 
-$VaultRoot   = if ($VaultRootOverride) { $VaultRootOverride.TrimEnd('\') + '\' } `
+$VaultRoot   = if ($VaultRootOverride) { Format-VaultRoot $VaultRootOverride } `
                else { Get-VaultRoot -StartPath $PSScriptRoot }
 $templateDir = Join-Path $_skillDir 'templates'
 

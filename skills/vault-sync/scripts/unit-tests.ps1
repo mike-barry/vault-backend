@@ -347,7 +347,7 @@ Run-Test 'SaveConflictVersion resolves to ours and saves theirs alongside' {
 
     Write-RepoFile $pair.Local 'File.md' "local-version`n"
     Add-CommitAll $pair.Local 'local edit'
-    git -C $pair.Local pull 2>&1 | Out-Null   # leaves a real conflict, MERGE_HEAD present
+    git -C $pair.Local pull --no-rebase 2>&1 | Out-Null   # leaves a real conflict, MERGE_HEAD present (--no-rebase: no pull.rebase config on a bare host)
 
     $r = Invoke-Sync @('-Action', 'SaveConflictVersion', '-VaultRootOverride', $base, '-Path', 'save-local', '-ConflictFile', 'File.md')
 

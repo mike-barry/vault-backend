@@ -23,7 +23,7 @@ $ErrorActionPreference = 'Stop'
 $_skillDir = if ($env:CLAUDE_SKILL_DIR) { $env:CLAUDE_SKILL_DIR } else { Split-Path $PSScriptRoot -Parent }
 . (Join-Path $_skillDir '..' '_shared' 'vault-frontmatter.ps1')
 
-$vaultRoot = if ($VaultRootOverride) { $VaultRootOverride.TrimEnd('\', '/') + '\' } else { Get-VaultRoot -StartPath $PSScriptRoot }
+$vaultRoot = if ($VaultRootOverride) { Format-VaultRoot $VaultRootOverride } else { Get-VaultRoot -StartPath $PSScriptRoot }
 
 $abs = Resolve-VaultPath -VaultRoot $vaultRoot -Path $SourcePath
 if (-not (Test-Path -LiteralPath $abs)) {

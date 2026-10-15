@@ -198,10 +198,10 @@ try {
     # (vault-doc-archive / vault-lint step 7 Check 4) - must not be flagged as missing it.
     New-TestFile 'Archive/Old-Project/Tasks.md' "---`ndoc.created: 2020-01-01`ndoc.archived: 2020-02-01`n---`n# Tasks`n"
     $out = Invoke-Validate
-    Assert-That 'Tasks.md with vault-tasks directive passes' ($out -notmatch 'Has\\Tasks\.md') $out
-    Assert-That 'Tasks.md without directive flagged' ($out -match 'Missing\\Tasks\.md' -and $out -match "missing its agent\.instructions") $out
-    Assert-That 'Tasks.md with no frontmatter flagged' ($out -match 'NoFm\\Tasks\.md') $out
-    Assert-That 'archived Tasks.md without directive not flagged' ($out -notmatch 'Old-Project\\Tasks\.md') $out
+    Assert-That 'Tasks.md with vault-tasks directive passes' ($out -notmatch 'Has[\\/]Tasks\.md') $out
+    Assert-That 'Tasks.md without directive flagged' ($out -match 'Missing[\\/]Tasks\.md' -and $out -match "missing its agent\.instructions") $out
+    Assert-That 'Tasks.md with no frontmatter flagged' ($out -match 'NoFm[\\/]Tasks\.md') $out
+    Assert-That 'archived Tasks.md without directive not flagged' ($out -notmatch 'Old-Project[\\/]Tasks\.md') $out
 
     # ---- folder-note completeness: missing ephemeral folder entry -------------
     # A folder note (<Dir>/<Dir>.md) whose directory contains a standard ephemeral folder with
@@ -222,9 +222,9 @@ try {
     New-TestFile 'AreaB/Archive/Old.md' 'x'    # Archive/ exists AND is declared -> not flagged
     $out = Invoke-Validate
     Assert-That 'missing ephemeral folder flagged with auto-add block' (
-        $out -match "AreaA\\AreaA\.md" -and $out -match "Missing folder entry \(auto-add\) for standard folder 'Inbox'" -and
+        $out -match "AreaA[\\/]AreaA\.md" -and $out -match "Missing folder entry \(auto-add\) for standard folder 'Inbox'" -and
         $out -match 'folder: ".fm-test-tmp/AreaA/Inbox"' -and $out -match 'load_when: "working on in-progress tasks or finding a specific artifact"') $out
-    Assert-That 'declared ephemeral folder not flagged' ($out -notmatch "AreaB\\AreaB\.md") $out
+    Assert-That 'declared ephemeral folder not flagged' ($out -notmatch "AreaB[\\/]AreaB\.md") $out
 
     # ---- folder-note completeness: Corpus member without a link ------------------
     Write-Host "`nfolder-note completeness - Corpus member link"

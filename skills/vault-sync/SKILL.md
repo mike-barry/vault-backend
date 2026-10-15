@@ -9,8 +9,6 @@ Goal: commit local changes, pull, resolve conflicts, push — so local and remot
 
 Every step below calls `.claude/skills/vault-sync/scripts/vault-sync.ps1 -Action <Name> -Path <repo>` (`.` for the vault root, `.claude` for the submodule). Non-zero exit: stop, report the error verbatim — don't fall back to raw `git` or filesystem edits.
 
-> **On Linux the `.ps1` scripts do not currently work.** There, run the git commands by hand instead, using each script as the guide for what its `-Action` should do — staging scope, pull behaviour (a plain `git pull`: fast-forward when possible, otherwise a merge commit), conflict handling, and the `Generated-by: vault-sync` commit trailer. The step sequence and conflict judgement below still apply unchanged; only the mechanism differs. This is the one case where raw `git` is expected rather than a failure to report.
-
 ## Steps
 
 ### 0. Submodule first

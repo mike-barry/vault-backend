@@ -75,7 +75,7 @@ $_skillDir = if ($env:CLAUDE_SKILL_DIR) { $env:CLAUDE_SKILL_DIR } else { Split-P
 . (Join-Path $_skillDir '..' '_shared' 'vault-frontmatter.ps1')
 
 $vaultRoot = if ($VaultRootOverride) { $VaultRootOverride } else { Get-VaultRoot $PSScriptRoot }
-$vaultRoot = $vaultRoot.TrimEnd('\', '/') + '\'
+$vaultRoot = Format-VaultRoot $vaultRoot
 
 # Skill-owned format, not an authored document. Folder notes are filtered per-file below via
 # Test-IsFolderNote (basename == parent folder name, not expressible as a bare filename).

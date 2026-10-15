@@ -30,7 +30,7 @@ $vaultRoot = if ($VaultRootOverride) { $VaultRootOverride } else { Get-VaultRoot
 # Guarantee a trailing separator so Substring($vaultRoot.Length) yields a clean relative path.
 # Get-VaultRoot already does this; an explicit override may not, which would leave a leading
 # separator that breaks path comparisons in the folder-note completeness scan.
-$vaultRoot = $vaultRoot.TrimEnd('\', '/') + '\'
+$vaultRoot = Format-VaultRoot $vaultRoot
 
 # File enumeration config - mirrors vault-lint's (lint-common.ps1). Templates carry literal
 # placeholder frontmatter; Document-Conventions points at the schema rather than encoding it.

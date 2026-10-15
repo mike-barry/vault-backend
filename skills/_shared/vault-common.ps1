@@ -8,18 +8,31 @@
 # most vault files have none, so always write with this instead.
 $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
+# Normalize a vault root for use as a prefix: trim any trailing separator of either kind,
+# then append this platform's own ([IO.Path]::DirectorySeparatorChar - '\' on Windows,
+# '/' on Linux/macOS). Every root-producing path in the skill scripts goes through here;
+# a hard-coded '\' was what broke the scripts on Linux, where Join-Path keeps the
+# backslash as a literal character and git refuses the resulting 'root\/sub' path.
+function Format-VaultRoot {
+    param(
+        # Vault root in any form - with or without a trailing separator of either kind.
+        [Parameter(Mandatory)][string]$Path
+    )
+    return $Path.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+}
+
 # Locate the vault root using a tiered strategy:
 #   1. $env:CLAUDE_PROJECT_DIR — set by the skill harness; authoritative in skill context.
 #   2. Walk up from $StartPath looking for a directory that contains .git.
 #   3. Throw if neither succeeds.
-# Returns the vault root with a trailing backslash.
+# Returns the vault root with a trailing platform separator (see Format-VaultRoot).
 function Get-VaultRoot {
     param(
         # Starting directory for the .git search; typically $PSScriptRoot of the calling script.
         [Parameter(Mandatory)][string]$StartPath
     )
     if ($env:CLAUDE_PROJECT_DIR -and (Test-Path (Join-Path $env:CLAUDE_PROJECT_DIR '.git'))) {
-        return $env:CLAUDE_PROJECT_DIR.TrimEnd('\') + '\'
+        return Format-VaultRoot $env:CLAUDE_PROJECT_DIR
     }
     $dir = [System.IO.DirectoryInfo]::new((Resolve-Path $StartPath).Path)
     while ($null -ne $dir) {
@@ -28,7 +41,7 @@ function Get-VaultRoot {
         # walk-up stops at .claude/ (the vault-backend submodule) instead of continuing to the
         # real vault root above it.
         if (Test-Path (Join-Path $dir.FullName '.git') -PathType Container) {
-            return $dir.FullName.TrimEnd('\') + '\'
+            return Format-VaultRoot $dir.FullName
         }
         $dir = $dir.Parent
     }
@@ -39,7 +52,7 @@ function Get-VaultRoot {
 # An already-absolute path is returned unchanged. Returns $null for empty input.
 function Resolve-VaultPath {
     param(
-        # Vault root with trailing backslash, as returned by Get-VaultRoot.
+        # Vault root with trailing separator, as returned by Get-VaultRoot.
         [Parameter(Mandatory)][string]$VaultRoot,
         # Vault-relative path to resolve. Absolute paths pass through unchanged. Empty returns $null.
         [string]$Path
@@ -52,7 +65,7 @@ function Resolve-VaultPath {
 # Enumerate *.md files under the vault with optional filtering.
 function Get-VaultMarkdownFiles {
     param(
-        # Vault root with trailing backslash, as returned by Get-VaultRoot.
+        # Vault root with trailing separator, as returned by Get-VaultRoot.
         [Parameter(Mandatory)][string]$VaultRoot,
         # Vault-relative path to scan instead of the full vault. When set, IncludeFolders is
         # bypassed but ExcludeFiles/ExcludePaths still apply. Used by tests and ad-hoc runs.
@@ -70,7 +83,8 @@ function Get-VaultMarkdownFiles {
         [switch]$IncludeHiddenFolders
     )
 
-    $excludedFull = if ($ExcludePaths) { $ExcludePaths | ForEach-Object { (Join-Path $VaultRoot $_).TrimEnd('\') } } else { @() }
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    $excludedFull = if ($ExcludePaths) { $ExcludePaths | ForEach-Object { (Join-Path $VaultRoot $_).TrimEnd('\', '/') } } else { @() }
 
     $roots = if ($PathOverride) {
         @(Resolve-VaultPath -VaultRoot $VaultRoot -Path $PathOverride)
@@ -85,7 +99,11 @@ function Get-VaultMarkdownFiles {
     foreach ($root in $roots) {
         if (-not (Test-Path $root)) { continue }
 
-        Get-ChildItem -Path $root -Recurse -Filter '*.md' | Where-Object {
+        # -Force: on Linux/macOS PowerShell treats dot-prefixed directories as hidden and
+        # Get-ChildItem skips them without it, which would silently defeat -IncludeHiddenFolders
+        # and any -PathOverride under .claude/. Windows has no hidden-attribute .md files in
+        # the vault, so -Force changes nothing there. The dot-folder skip below stays explicit.
+        Get-ChildItem -Path $root -Recurse -Force -Filter '*.md' | Where-Object {
             # Full-scan mode: skip dot-prefixed directories (e.g. .claude, .myai) unless the
             # caller opted in to hidden folders.
             if ($fullScan -and -not $IncludeHiddenFolders) {
@@ -95,7 +113,7 @@ function Get-VaultMarkdownFiles {
             }
             if ($ExcludeFiles -and $ExcludeFiles -contains $_.Name) { return $false }
             foreach ($ex in $excludedFull) {
-                if ($_.FullName -like "$ex\*") { return $false }
+                if ($_.FullName -like "$ex$sep*") { return $false }
             }
             return $true
         }

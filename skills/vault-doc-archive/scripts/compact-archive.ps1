@@ -23,7 +23,7 @@ $_skillDir = if ($env:CLAUDE_SKILL_DIR) { $env:CLAUDE_SKILL_DIR } else { Split-P
 . (Join-Path $_skillDir '..' '_shared' 'vault-common.ps1')
 . (Join-Path $_skillDir '..' '_shared' 'vault-frontmatter.ps1')
 
-$VaultRoot = if ($VaultRootOverride) { $VaultRootOverride.TrimEnd('\') + '\' } `
+$VaultRoot = if ($VaultRootOverride) { Format-VaultRoot $VaultRootOverride } `
              else { Get-VaultRoot -StartPath $PSScriptRoot }
 
 function Get-FileDate {

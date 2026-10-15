@@ -62,12 +62,16 @@ function Get-GitPullClassification {
 }
 
 # Runs `git pull` against $RepoPath and classifies the result.
+# --no-rebase pins the skill's documented behaviour (fast-forward when possible, otherwise a
+# merge commit) regardless of the machine's pull.rebase setting: with no setting at all,
+# git 2.27+ refuses a divergent pull outright ("Need to specify how to reconcile divergent
+# branches"), which is what happened on a Linux host with a bare global config.
 # Returns @{ Status; ConflictedFiles; Raw }.
 function Invoke-GitPull {
     param(
         [Parameter(Mandatory)][string]$RepoPath
     )
-    $output = (git -C $RepoPath pull 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    $output = (git -C $RepoPath pull --no-rebase 2>&1 | ForEach-Object { "$_" }) -join "`n"
     $exitCode = $LASTEXITCODE
     $conflicted = @()
     if ($exitCode -ne 0) {
@@ -84,9 +88,12 @@ function New-ConflictFilePath {
         [Parameter(Mandatory)][string]$RelPath,
         [datetime]$Now = (Get-Date)
     )
-    $dir  = Split-Path $RelPath -Parent
-    $stem = [System.IO.Path]::GetFileNameWithoutExtension($RelPath)
-    $ext  = [System.IO.Path]::GetExtension($RelPath)
+    # Normalize first: on Linux .NET does not treat '\' as a separator, so a backslash
+    # path would keep its directories inside the "file name" and double them up.
+    $rel  = $RelPath -replace '\\', '/'
+    $dir  = Split-Path $rel -Parent
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($rel)
+    $ext  = [System.IO.Path]::GetExtension($rel)
     $stamp = $Now.ToString('yyyyMMdd HHmm')
     $newName = "$stem [CONFLICT $stamp]$ext"
     if ($dir) { return (Join-Path $dir $newName) -replace '\\', '/' }

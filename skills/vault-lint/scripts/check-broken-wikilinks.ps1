@@ -62,7 +62,8 @@ function Test-IgnoredLink {
 # check-markdown-anchor-links.ps1), so a skill doc must count as an existing note like any other.
 $indexRoot = if ($PathOverride) { Resolve-VaultPath -VaultRoot $vaultRoot -Path $PathOverride } else { $vaultRoot }
 $currentNotes = @{}
-Get-ChildItem -Path $indexRoot -Recurse -Filter "*.md" | ForEach-Object {
+# -Force so dot-prefixed folders (hidden on Linux/macOS without it) are indexed as on Windows.
+Get-ChildItem -Path $indexRoot -Recurse -Force -Filter "*.md" | ForEach-Object {
     $currentNotes[$_.BaseName] = $true
 }
 

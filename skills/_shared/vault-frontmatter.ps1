@@ -353,7 +353,7 @@ function Remove-UseSkillAgentInstructions {
 # rather than guessing.
 function Get-CreatedDate {
     param(
-        # Vault root with trailing backslash, as returned by Get-VaultRoot.
+        # Vault root with trailing separator, as returned by Get-VaultRoot.
         [Parameter(Mandatory)][string]$VaultRoot,
         # Vault-relative path to the file (forward or back slashes both accepted).
         [Parameter(Mandatory)][string]$RelPath,
@@ -388,7 +388,7 @@ function Get-CreatedDate {
 # rather than guessing.
 function Get-ArchivedDate {
     param(
-        # Vault root with trailing backslash, as returned by Get-VaultRoot.
+        # Vault root with trailing separator, as returned by Get-VaultRoot.
         [Parameter(Mandatory)][string]$VaultRoot,
         # Vault-relative path to the file (forward or back slashes both accepted).
         [Parameter(Mandatory)][string]$RelPath,

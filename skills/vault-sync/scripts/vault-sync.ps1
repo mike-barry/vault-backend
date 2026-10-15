@@ -31,8 +31,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..' '..' '_shared' 'vault-common.ps1')
 . (Join-Path $PSScriptRoot 'vault-sync-git.ps1')
 
-$vaultRoot = if ($VaultRootOverride) { $VaultRootOverride.TrimEnd('\') + '\' } else { Get-VaultRoot $PSScriptRoot }
-$repoPath = if ($Path -and $Path -ne '.') { Resolve-VaultPath -VaultRoot $vaultRoot -Path $Path } else { $vaultRoot.TrimEnd('\') }
+$vaultRoot = if ($VaultRootOverride) { Format-VaultRoot $VaultRootOverride } else { Get-VaultRoot $PSScriptRoot }
+$repoPath = if ($Path -and $Path -ne '.') { Resolve-VaultPath -VaultRoot $vaultRoot -Path $Path } else { $vaultRoot.TrimEnd('\', '/') }
 
 if (-not (Test-Path $repoPath)) {
     Write-Error "Path does not exist: $Path"

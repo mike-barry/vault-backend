@@ -45,6 +45,8 @@ Known types and their date-significance:
 | Reading | No |
 | Proposal | No |
 | Issue | No |
+| Task | No |
+| View | No |
 
 Any Title-Case word is a valid type, but types not in this table are **unrecognized** and must be confirmed with the user before proceeding.
 

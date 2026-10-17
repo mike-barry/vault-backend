@@ -1,136 +1,136 @@
 ---
 name: vault-tasks
-description: Add, update, and prune tasks across the vault's distributed Tasks.md files. Use when the user says "add a task", "new task", "capture this as a task", "update the task", "mark X done", "what am I working on", "task for project X", "prune done tasks", "clear completed", "add a reminder", "remind me", or otherwise wants to record, change, or clean up a todo. Also covers initializing a missing Tasks.md for a single project or area ("init task files").
+description: Add, update, and prune tasks across the vault's distributed Tasks.md files. Use when the user says "add a task", "new task", "capture this as a task", "update the task", "start X", "mark X done", "finish X", "cancel X", "X is blocked", "move X to sprint", "move X to backlog", "what am I working on", "task for project X", "promote this task", "make a task doc", "tag this for the X list", "create a view", "show tasks for X", "check task files", "backfill task IDs", "prune done tasks", "clear completed", "add a reminder", "remind me", or otherwise wants to record, change, group, or clean up a todo. Also covers initializing a missing Tasks.md for a single project or area ("init task files").
 ---
 
 # Vault Tasks
 
-Manages the vault's distributed task lists. Tasks live in per-project and per-area `Tasks.md` files — one per Area and one per active project — not in a single global list. This skill owns adding tasks, updating them, routing new tasks to the right file, pruning completed ones, and backfilling missing task files.
-
-For tasks that outgrow a list item, hand off to the `vault-docs` skill (see [[#Spinning Out to an Artifact Doc]]).
+A task is one checkbox line in the `Tasks.md` of the project or area it belongs to, carrying a numeric ID. Its section heading is its queue and its checkbox symbol is its status. A task that outgrows its line gets an optional `Task-N` doc, and every cross-context view is a query over lines, never a copy of them. The full description, including line grammar and the task object fields, is [[Task-System]].
 
 ## Sections
 
-Every `Tasks.md` uses these sections, in this order. Omit a section only if the file never needs it; prefer keeping them present and empty.
+| Section | Queue |
+|---------|-------|
+| `Reminders` | Plain bullets, no checkbox or lifecycle; `@time` anchors a time-sensitive one. |
+| `Sprint` | Pulled from the backlog and committed, started or not. |
+| `Blocked` | Waiting on someone or something external; the line's text says what. |
+| `Backlog` | Intended eventually, not committed. |
+| `Side Quests` | Curiosities with no obligation to act. |
+| `Done` | Done or cancelled; a short trail pruned after 7 days by default. |
 
-| Section | Meaning |
-|---------|---------|
-| `🔔 Reminders` | Lightweight, checklist-free notes: things to remember, time-anchored cues, or quick errands. Not tasks — no checkbox, no lifecycle, no plugin fields. |
-| `🔥 Active` | Currently being worked on, or next-up and prioritized. Tasks may be `[ ]` (queued) or `[/]` (actively in progress). |
-| `🧱 Blocked` | Blocked on someone or something external. Tasks may be `[ ]` or `[/]`. Note what is being waited on. |
-| `📋 Backlog` | Intend to act on eventually; not prioritized or started. Always `[ ]`. |
-| `🗺️ Side Quests` | Passive musings or curiosities; may never be acted on, no obligation. Always `[ ]`. |
-| `✅ Done` | Completed (`[x]`) or cancelled (`[-]`). Kept as a short recently-completed trail, pruned periodically. |
+Status symbols: `[ ]` todo, `[/]` in progress, `[x]` done, `[-]` cancelled. Status is independent of queue, so a started task moved back to Backlog keeps its `[/]`; the only rule is that Done holds only `[x]` and `[-]`, and only Done holds them.
 
-`Backlog` carries intent to act; `Side Quests` is exploratory with no obligation. Keep them distinct.
+## Running the Script
 
-## Reminder Format
-
-Reminders are plain bullets — no checkbox, no plugin fields, no lifecycle. Use `@time` to anchor time-sensitive items:
+Every verb is one call:
 
 ```
-- Buy dog food
-- Project meeting @10am
-- Follow up with Alex after standup
+pwsh -NonInteractive -NoProfile -File .claude/skills/vault-tasks/scripts/tasks.ps1 -Action <verb> ...
 ```
 
-Remove a reminder by deleting its line when the user says it's done or no longer needed. There is no "done" state — reminders are either present or gone.
+- **Arrays** are passed as one delimited string: `-Tags`, `-Tag`, `-AddTag`, `-RemoveTag`, `-Section`, `-Status`, `-Id` are comma-separated (`-Tags "list/weekend-2026-10-17,errand"`); `-Children` and `-AddChild` are newline-separated (in Bash, `-Children $'First\nSecond'`). Tags may be given with or without `#`.
+- **Values** are case-insensitive. Sections: `Sprint`, `Blocked`, `Backlog`, `SideQuests`, `Done`, `Reminders`. Statuses: `todo`, `in-progress`. Priorities: `highest`, `high`, `medium`, `low`, `lowest`, `none`. Dates are `yyyy-MM-dd`, or `none` to clear.
+- **Output** is one JSON document on stdout. Summarize it for the user; never paste raw JSON.
+- **Errors** exit 1 with the explanation on stderr. Relay it verbatim and stop; never fall back to editing the file by hand.
+- **Address tasks by ID**, found with `list` when the user names a task by its words.
 
-## Task Format
+## Routing a New Task
 
-Three tiers — use the lightest one that fits. Every task ends with one or more emoji fields from the Obsidian Tasks plugin. The created date (`➕`) is always present. Other fields are added only when applicable.
+In this vault, load `Projects/Projects.md` and route to the `Tasks.md` of the active project the task clearly belongs to; otherwise load `Areas/Areas.md` and route to the matching area. Ask when ambiguous. If the target `Tasks.md` is missing, run [[#Init]].
 
-**Tasks plugin fields** (place in this order, after all freeform text):
+## Verbs
 
-| Field | Emoji | When to use |
-|-------|-------|-------------|
-| Priority | 🔺 ⏫ 🔼 🔽 ⏬ | Only when user specifies. Levels highest→lowest: 🔺 highest, ⏫ high, 🔼 medium, 🔽 low, ⏬ lowest. Omit for normal/unspecified priority. |
-| Start date | 🛫 YYYY-MM-DD | Only when user specifies a start date |
-| Scheduled date | ⏳ YYYY-MM-DD | Only when user specifies a scheduled date |
-| Due date | 📅 YYYY-MM-DD | Only when user specifies a due date |
-| Created date | ➕ YYYY-MM-DD | Always — set to today when adding the task |
-| Done date | ✅ YYYY-MM-DD | Set to today when completing the task |
-| Cancelled date | ❌ YYYY-MM-DD | Set to today when cancelling the task |
+### List
 
-**Simple** — straightforward tasks with no metadata:
+"What am I working on", "show tasks for X":
+
 ```
-- [ ] Short description | ➕ 2026-06-19
+-Action list [-Path <file|folder>] [-Section Sprint,Blocked] [-Status todo,in-progress] [-Tag list/<name>] [-Id 17,18]
 ```
 
-**Medium** — needs freeform context and/or metadata. The freeform trail uses ` | ` (pipe) as a separator; the text always ends with a final ` | ` so Tasks plugin fields follow cleanly:
-```
-- [ ] **Task title** - context | for-whom | 📅 2026-06-30 ➕ 2026-06-19
-```
+Default scope is the whole repo. Lines with a null `Id` are hand-written and not yet stamped; they are still real tasks.
 
-**Detailed** — needs steps, links, or sub-tasks. Use **as many sub-bullets as needed**:
+### Add
+
 ```
-- [ ] **Task title** - context | for-whom | 📅 2026-06-30 ➕ 2026-06-19
-    - Sub-bullet for detail
-    - Another sub-bullet — links, steps, or sub-tasks
+-Action add -Path <Tasks.md|folder> -Title "<title>" [-Text "<context>"] [-Section <name>] [-Status in-progress] [-Tags ...] [-Priority ...] [-Start|-Scheduled|-Due <date>] [-Children ...]
 ```
 
-**Done** — completed item in the `Done` section. No strikethrough. Keep only the `➕` created date and the `✅` done date (or `❌` cancelled date) after a single `|`; drop all other plugin fields and freeform text:
+- Section defaults to `Backlog`; use `Sprint` when the user says now or next, `Blocked` or `SideQuests` when that fits.
+- Pass priority and dates only when the user gives them.
+- **Reminder**: `-Section Reminders -Title "<text>"` writes a plain bullet. Put any `@time` inside the title (`-Title "Project meeting @10am"`); no other parameters apply. Remove a reminder that is done by deleting its line.
+
+### Update
+
 ```
-- [x] Task title | ➕ 2026-06-19 ✅ 2026-06-25
+-Action update -Id <n> [-Title] [-Text] [-AddTag] [-RemoveTag] [-Priority] [-Start|-Scheduled|-Due] [-Status todo|in-progress] [-Section <name>] [-AddChild ...]
 ```
 
-## Add a Reminder
+- **Start**: `-Status in-progress`, plus `-Section Sprint` if it is not already there.
+- **Block**: `-Section Blocked -Text "<what it waits on>"`. `-Text` replaces the whole text, so carry over any context worth keeping.
+- **Move**: `-Section Sprint|Backlog|SideQuests|Blocked` moves the line and its sub-bullets to the top of that section in the same file; status is unchanged.
+- **Move to another file**: no verb does this. Say so and ask before doing anything.
 
-1. **Route it** using the same routing tree as tasks (active project first, then Area).
-2. **Place it** in the `Reminders` section as a plain bullet — no checkbox, no plugin fields.
-3. Use `@time` if the user specifies a time (e.g. `@10am`, `@end of day`).
+### Done and Cancel
 
-## Add a Task
+```
+-Action done -Id <n>
+-Action cancel -Id <n>
+```
 
-1. **Route it** to the correct `Tasks.md` using the routing tree below.
-2. **Place it** in the right state section — usually `Active` if it's being worked on now, otherwise `Backlog`. Use `Blocked` if it's blocked, `Side Quests` if it's a no-obligation curiosity.
-3. **Check for subsections** — After choosing a state section, read the target `Tasks.md` and look for `**bold heading**` lines (a line consisting only of `**text**`) inside that section. If any exist, use `AskUserQuestion` with the found subsection headings as options before writing. If none exist, place the task directly under the `##` section heading without asking.
-4. **Format it** with the lightest item tier that fits. Always append `➕ YYYY-MM-DD` (today's date). Add priority, due, scheduled, or start fields only if the user specifies them.
+Use `cancel` for work deliberately abandoned, not deferred. When the output's `LinkedDoc` is non-null, hand that path to `vault-doc-archive` at its programmatic entry point with type `Task` and today's date. A null `LinkedDoc` (including a line that links a `Plan-` doc) means nothing to archive.
 
-### Routing Tree
+### Promote
 
-1. Load `Projects/Projects.md`. Does the task clearly belong to an **active project** listed there? If so, add it to that project's `Tasks.md`.
-2. Otherwise, which **Area** does it belong to? Load `Areas/Areas.md` to get the current list of areas. Add the task to the matching area's `Tasks.md`.
-3. **Ambiguous?** Ask the user rather than guessing.
+When a task needs more than sub-bullets (findings, links, criteria), or the user asks for a task doc:
 
-Every Area is assumed to have a `Tasks.md`. If one is missing, run the [[#Initialize Task Files|init action]].
+```
+-Action promote -Id <n> [-Title "<doc title>"] [-Intro "<intro paragraph>"]
+```
 
-## Update a Task
+The output's `DocPath` is the new `Task-N-` doc; the line's title becomes its link. Then offer to add `## Acceptance Criteria`; if the user states criteria, add the section to the doc by hand, one `- [ ]` per criterion, above `## Notes` if present.
 
-- **Change state** — Move the item to the appropriate section (e.g. `Backlog` → `Active` when work starts, or `Active` → `Blocked` when it becomes blocked). When moving to `Blocked`, record the blocker in the pipe-separated metadata trail (e.g., `| blocked on: Bob's review |`).
-- **Promote to in-progress** — Set `[/]` on a task in `Active` when the agent is actively working on it with the user in the current session. The user manages this transition manually otherwise.
-- **Edit detail** — Adjust the title or body in place; promote to a heavier item tier if it has grown.
-- **Mark done** — Move the item to the `Done` section, set `[x]`, and append today's done date: `✅ YYYY-MM-DD`. Keep only the `➕` created date; drop all other plugin fields and freeform metadata. Do not delete the item; the `Done` trail is cleared by `prune`, not on completion.
-- **Cancel** — Move the item to the `Done` section, set `[-]`, and append today's cancelled date: `❌ YYYY-MM-DD`. Keep only the `➕` created date; drop all other plugin fields and freeform metadata. Use for tasks deliberately abandoned, not merely deferred.
-- **Spin out** — When the user requests a planning doc for a task, collapse the item to a single-line back-reference.
+### Tags and Views
 
-## Spinning Out to an Artifact Doc
+- **Ad hoc list**: tag each line `#list/<name>`, dated when time-boxed (`list/weekend-2026-10-17`), via `-Tags` on `add` or `-AddTag` on `update`.
+- **View**: create `Inbox/View-<Name>.md` at the vault root from `templates/View-Template.md`, filling `{{Date}}` (today), `{{Title}}`, `{{Description}}` (one sentence on what it gathers), and `{{Filter}}`: `tags include #list/<name>` for a tag view, `path includes <folder>` for a single context. Write the file directly; a View note carries no directive.
 
-When a task outgrows a list item, it spins out to an artifact doc. Two types, same task action:
+### Prune
 
-- **Idea doc** (owned by `vault-docs`): exploration or research tasks where thinking is the output — triggered by words like "explore", "research", "brainstorm", "think about".
-- **Planning doc** (owned by `vault-docs`): tasks needing upfront design decisions before implementation — triggered when the user explicitly asks to plan it out.
+```
+-Action prune [-Path <file|folder>] [-Days <n>]
+```
 
-The task action is identical in both cases:
+Scope to the file in context, or the repo if the user asks for all; ask if neither is clear. This previews. List the selected items, confirm with the user, then re-run the same call with `-Apply` and report what was removed from which files.
 
-1. **Set the task to `[/]`** (in progress). Spinning out means active work is underway — the task is not merely queued.
-2. **Collapse the list item** to a single-line back-reference. Add a brief context note before the link **when the title alone doesn't convey what the task is about**:
-   ```
-   - [/] **Short title** - <brief context> - See [[DocName]]. | ➕ 2026-06-19
-   - [/] **Self-explanatory title** - See [[DocName]]. | ➕ 2026-06-19
-   ```
-   The optional context note lets a future agent judge from the list alone whether the task is relevant to the current conversation, and therefore whether to load the referenced doc. Keep it to a phrase — enough to signal applicability, not a summary.
-3. **Hand off** to the appropriate skill to scaffold the artifact doc. It lives in an **`Inbox/`** of the same project or area as the `Tasks.md` that references it.
+### Check
 
-## Prune Done Tasks
+```
+-Action check [-Path <file|folder>]
+```
 
-Clears stale completed and cancelled items from the `Done` trail. Triggered on demand ("prune done tasks", "clear completed").
+Report problems grouped by code. Fixes: `LegacyHeading` - rename the `Active` heading to `Sprint` (keep its emoji prefix); `MissingId` or `MissingCreated` - run backfill. For the rest (`UnknownSection`, `EmptyTitle`, `CheckboxInReminders`, `DuplicateId`, `MissingDoc`, `OrphanDoc`, `DoneOutsideDone`), report and ask how to resolve.
 
-1. Scope to the file in context by default, or all task files if asked ("prune all done tasks"). If no file is clear from context, ask the user to specify.
-2. Find `Done` items — both `[x]` (completed, with `✅ YYYY-MM-DD`) and `[-]` (cancelled, with `❌ YYYY-MM-DD`) — whose date field is **older than 7 days** from today. (Use a different cutoff if the user specifies one, e.g. "prune anything older than 30 days".)
-3. **List the matching items and confirm with the user before deleting.**
-4. On confirmation, remove them, leaving the empty `Done` heading in place. Report how many were pruned from which files.
+### Backfill
 
-## Initialize Task Files
+```
+-Action backfill [-Path <file|folder>]
+```
 
-Creates a `Tasks.md` for a single project or area folder. Load `init.md` (same skill directory) for the full instructions — it covers what to ask the user and how to run the scaffold script.
+Stamps missing IDs and created dates. Safe to re-run.
+
+## Spin-Out to a Planning Doc
+
+When the user asks to plan a task out, hand off to `vault-docs` (plan flow); an exploration or research task ("explore", "brainstorm", "think about") goes to its idea flow instead. When the doc exists, collapse the line with `-Action update -Id <n> -Status in-progress -Text "See [[Plan-X]]"`, keeping the title. Prefix a brief context phrase (`-Text "<context> - See [[Plan-X]]"`) when the title alone does not say what the task is about. Planned tasks link the plan directly and are never promoted to a `Task-` doc.
+
+## Manual Edits
+
+The user edits `Tasks.md` by hand in Obsidian. Lines without an ID are normal and get one on the next verb that touches them, a `backfill`, or a commit. Never regenerate a file, and never edit a task line by hand when a verb exists; if no verb can express the change, say so and ask.
+
+## Init
+
+Creates a missing `Tasks.md` for one project or area. Load `init.md` (same skill directory) for the steps.
+
+## Portability
+
+The script assumes only `Tasks.md` files with the canonical section headings and an optional `Inbox/` sibling for task docs. The routing index and the archive handoff after `done` are this vault's conventions and live here, not in the script.

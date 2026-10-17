@@ -541,6 +541,29 @@ try {
 
     $out = Invoke-Lint 'fix-hard-wrap.ps1' @('-InspectFile', "$override/Embed.md")
     Assert-That 'embed target break always flagged' ($out -match '\[flagged: break inside embed link\]') $out
+    # ---- check-task-lines -----------------------------------------------------
+    Write-Host "`ncheck-task-lines.ps1"
+    Reset-TestFolder
+    New-TestFile 'Areas/Demo/Tasks.md' (@(
+        '# Demo Tasks', '',
+        '## 🔔 Reminders', '', '- [ ] not a reminder', '',
+        '## 🔥 Active', '', '- [ ] **No id yet**', '- [ ] [[Task-9001-Gone]] | 🆔 9001 ➕ 2026-10-17', '- [x] finished early | 🆔 9002 ➕ 2026-10-17 ✅ 2026-10-17', '',
+        '## 🧱 Blocked', '', '## 📋 Backlog', '', '- [ ] | 🆔 9003 ➕ 2026-10-17', '',
+        '## 🗺️ Side Quests', '', '## ✅ Done', '', '## Notes', ''
+    ) -join "`n")
+    New-TestFile 'Areas/Demo/Inbox/Task-9004-Orphan.md' "# Orphan`n"
+    New-TestFile 'Areas/Clean/Tasks.md' (@('# Clean Tasks', '', '## 🔥 Sprint', '', '- [ ] fine | 🆔 9005 ➕ 2026-10-17', '', '## ✅ Done', '') -join "`n")
+
+    $out = Invoke-Lint 'check-task-lines.ps1'
+    foreach ($code in 'LegacyHeading', 'CheckboxInReminders', 'MissingId', 'MissingCreated', 'EmptyTitle', 'MissingDoc', 'OrphanDoc', 'DoneOutsideDone', 'UnknownSection') {
+        Assert-That "reports $code" ($out -match "$code \(\d+\):") $out
+    }
+    Assert-That 'names the file and line'    ($out -match 'Areas[\\/]Demo[\\/]Tasks\.md:9') $out
+    Assert-That 'clean file not reported'    ($out -notmatch 'Clean[\\/]Tasks\.md') $out
+    Assert-That 'totals the problems'        ($out -match '\d+ task line problem\(s\) found') $out
+
+    $out = (& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-task-lines.ps1') -PathOverride "$override/Areas/Clean" -VaultRootOverride $worktreePath 2>&1 | Out-String)
+    Assert-That 'scoped clean run reports none' ($out -match 'No task line problems found') $out
 } finally {
     Remove-TestWorktree -VaultRoot $vaultRoot -WorktreePath $worktreePath
 }

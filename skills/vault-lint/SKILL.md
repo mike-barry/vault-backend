@@ -155,6 +155,17 @@ Not part of the default sweep above — only run this when the user explicitly a
 
 ---
 
+## 9. Task Lines
+
+Check every `Tasks.md` for lines the task system cannot use: unknown or legacy (`Active`) section headings, empty titles, checkboxes under Reminders, missing or duplicate IDs, missing created dates, a promoted link whose `Task-N` doc is missing, a `Task-N` doc with no line, and a done or cancelled symbol outside Done. Wraps `tasks.ps1 -Action check` from the `vault-tasks` skill, so the two never disagree about what a problem is. Report-only.
+
+```powershell
+pwsh .claude/skills/vault-lint/scripts/check-task-lines.ps1
+```
+
+Show the output grouped by code. Remedies belong to `vault-tasks`: `MissingId` and `MissingCreated` are fixed by its `backfill` verb, `LegacyHeading` by renaming the heading to `Sprint`, and the rest by hand through the skill. See [[Task-System]].
+
+---
 ## Testing
 
 The scripts have a unit-test suite. Run it after changing any lint script:

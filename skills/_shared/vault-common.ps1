@@ -191,3 +191,78 @@ function ConvertTo-ComparablePath {
     param([string]$Path)
     return (($Path -replace '\\', '/').TrimEnd('/')).ToLowerInvariant()
 }
+
+# Enumerate files under $Root whose name matches $Filter, pruning any directory whose own name
+# is in $ExcludeFolderNames (case-insensitive) without descending into it - so a large
+# node_modules or .git tree costs nothing. Hidden and dot-prefixed directories are walked
+# (unless excluded by name) on every platform; reparse points (symlinks, junctions) are not
+# followed, which rules out cycles. Unreadable directories are skipped silently. Returns
+# absolute paths sorted ordinally; an empty array when $Root does not exist. Generic
+# filesystem logic with no content dependency.
+function Get-PrunedFiles {
+    param(
+        # Directory to walk.
+        [Parameter(Mandatory)][string]$Root,
+        # Filename wildcard passed to the .NET enumerator (e.g. 'Tasks.md', 'Task-*.md').
+        [string]$Filter = '*',
+        # Directory names to prune wherever they appear below $Root (e.g. 'Archive', '.git').
+        [string[]]$ExcludeFolderNames = @()
+    )
+    if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return @() }
+    $excluded = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($n in $ExcludeFolderNames) { if ($n) { [void]$excluded.Add($n) } }
+
+    $results = [System.Collections.Generic.List[string]]::new()
+    $stack   = [System.Collections.Generic.Stack[System.IO.DirectoryInfo]]::new()
+    $stack.Push([System.IO.DirectoryInfo]::new((Resolve-Path -LiteralPath $Root).Path))
+    while ($stack.Count -gt 0) {
+        $dir = $stack.Pop()
+        try {
+            foreach ($f in $dir.EnumerateFiles($Filter)) { $results.Add($f.FullName) }
+            foreach ($d in $dir.EnumerateDirectories()) {
+                if ($excluded.Contains($d.Name)) { continue }
+                if ($d.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { continue }
+                $stack.Push($d)
+            }
+        } catch [System.UnauthorizedAccessException] { continue }
+          catch [System.IO.IOException] { continue }
+    }
+    $arr = $results.ToArray()
+    [System.Array]::Sort($arr, [System.StringComparer]::Ordinal)
+    return $arr
+}
+
+# Build a Title-Case-With-Hyphens filename stem from free text (no extension). Wikilinks
+# collapse to their display text ([[Target|Alias]] -> Alias, [[Target]] -> Target), markdown
+# links to their text ([text](url) -> text), apostrophes are dropped (Mike's -> Mikes), and
+# every other run of non-letter/non-digit characters (markdown markup, '&', '/', spaces)
+# becomes a single word break. Each word's first letter is upper-cased and the rest is left
+# as typed, so 'MCP' and 'iPhone'-style casing inside a word survive. Words are added while
+# the joined stem stays within $MaxLength; a single over-long first word is cut to fit.
+# Returns '' when the text has no letters or digits. Generic string logic.
+function ConvertTo-TitleSlug {
+    param(
+        # Free text to convert, e.g. a task title.
+        [AllowEmptyString()][Parameter(Mandatory)][string]$Text,
+        # Maximum stem length in characters; the cut falls on a word boundary.
+        [int]$MaxLength = 60
+    )
+    $t = $Text -replace '\[\[[^\]|]*\|([^\]]*)\]\]', '$1'
+    $t = $t -replace '\[\[([^\]]*)\]\]', '$1'
+    $t = $t -replace '\[([^\]]*)\]\((?:\\.|[^)\\])*\)', '$1'
+    # Apostrophes, straight and typographic (U+2019, built from its code point because
+    # PowerShell's parser treats a literal one as a quote character).
+    $t = $t -replace ("['" + [char]0x2019 + ']'), ''
+    $words = @($t -split '[^\p{L}\p{N}]+' | Where-Object { $_ })
+    $out = ''
+    foreach ($w in $words) {
+        $cap  = $w.Substring(0, 1).ToUpperInvariant() + $w.Substring(1)
+        $next = if ($out) { "$out-$cap" } else { $cap }
+        if ($next.Length -gt $MaxLength) {
+            if (-not $out) { $out = $cap.Substring(0, $MaxLength) }
+            break
+        }
+        $out = $next
+    }
+    return $out
+}

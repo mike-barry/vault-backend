@@ -6,20 +6,18 @@ Creates a `Tasks.md` in a single project or area folder. Load this file when the
 
 Ask for anything missing:
 
-1. **Path** — vault-relative path to the project or area folder (e.g. `Projects/Maui-Trip-2026` or `Areas/Hobbies`)
-2. **Scope** — `personal` or `work`; written into the `scope:` frontmatter field, which the task dashboard queries use to include the file
+- **Path** — vault-relative path to the project or area folder (e.g. `Projects/Maui-Trip-2026` or `Areas/Hobbies`)
 
 ## Steps
 
 ### 1. Run the script
 
 ```
-pwsh -NonInteractive -NoProfile -File .claude/skills/vault-tasks/scripts/init-tasks.ps1 `
-    -Path "<path>" -Scope "<personal|work>"
+pwsh -NonInteractive -NoProfile -File .claude/skills/vault-tasks/scripts/init-tasks.ps1 -Path "<path>"
 ```
 
 The script errors if `Tasks.md` already exists at that path — no need to check first.
 
 ### 2. Report the result
 
-Confirm the file was created and state the name and scope it was seeded with.
+Confirm the file was created and state the name it was seeded with.

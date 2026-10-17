@@ -4,11 +4,10 @@
 #
 # Usage:
 #   pwsh -NonInteractive -NoProfile -File init-tasks.ps1 `
-#       -Path Projects/Maui-Trip-2026 -Scope personal
+#       -Path Projects/Maui-Trip-2026
 
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('personal', 'work')][string]$Scope,
     # Override the vault root; used by unit tests to redirect to a temporary worktree.
     [string]$VaultRootOverride
 )
@@ -40,11 +39,9 @@ if (Test-Path $taskFile) {
 
 $template    = [System.IO.File]::ReadAllText((Join-Path $templateDir 'Tasks-Template.md'), $Utf8NoBom)
 $noteContent = $template `
-    -replace '\{\{Name\}\}',  $Name `
-    -replace '\{\{Scope\}\}', $Scope
+    -replace '\{\{Name\}\}',  $Name
 
 [System.IO.File]::WriteAllText($taskFile, $noteContent, $Utf8NoBom)
 
 Write-Host "Created: $taskFile"
 Write-Host "  Name:  $Name"
-Write-Host "  Scope: $Scope"

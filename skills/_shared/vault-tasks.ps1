@@ -7,7 +7,7 @@
 #
 # Model
 #   A task is an indent-zero checkbox line ('- [c] ...', c any single char) inside a task
-#   section ('##' heading: Sprint (legacy: Active), Blocked, Backlog, Side Quests, Done) of a
+#   section ('##' heading: Current (legacy: Sprint, Active), Blocked, Backlog, Side Quests, Done) of a
 #   file named Tasks.md. Indented and blank lines after it are its Children (its body), never
 #   tasks themselves, and travel with it on a move. Indent-zero bullets under Reminders are
 #   reminders. Queue is the section; status is the checkbox symbol.
@@ -303,14 +303,15 @@ function ConvertTo-TaskLine {
 # ---------------------------------------------------------------------------
 
 # Map a '##' heading's text to @{ Name; Legacy } by keyword, ignoring case, emoji, spacing,
-# and punctuation. Name is $null for an unknown section; Legacy is true for 'Active'.
+# and punctuation. Name is $null for an unknown section; Legacy is true for 'Sprint' and 'Active'.
 function Get-TaskSectionName {
     param([Parameter(Mandatory)][AllowEmptyString()][string]$Heading)
     $key = ($Heading -replace '[^\p{L}]', '').ToLowerInvariant()
     switch ($key) {
         'reminders'  { return @{ Name = 'Reminders';  Legacy = $false } }
-        'sprint'     { return @{ Name = 'Sprint';     Legacy = $false } }
-        'active'     { return @{ Name = 'Sprint';     Legacy = $true } }
+        'current'    { return @{ Name = 'Current';    Legacy = $false } }
+        'sprint'     { return @{ Name = 'Current';    Legacy = $true } }
+        'active'     { return @{ Name = 'Current';    Legacy = $true } }
         'blocked'    { return @{ Name = 'Blocked';    Legacy = $false } }
         'backlog'    { return @{ Name = 'Backlog';    Legacy = $false } }
         'sidequests' { return @{ Name = 'SideQuests'; Legacy = $false } }
@@ -355,7 +356,7 @@ function Get-TaskFile {
     $tasks     = [System.Collections.Generic.List[object]]::new()
     $reminders = [System.Collections.Generic.List[object]]::new()
     $problems  = [System.Collections.Generic.List[object]]::new()
-    $taskSections = @('Sprint', 'Blocked', 'Backlog', 'SideQuests', 'Done')
+    $taskSections = @('Current', 'Blocked', 'Backlog', 'SideQuests', 'Done')
     function AddProblem([int]$n, [string]$msg) { $problems.Add([PSCustomObject]@{ LineNumber = $n; Message = $msg }) }
 
     # Skip a leading frontmatter block.
@@ -380,7 +381,7 @@ function Get-TaskFile {
             $current = [PSCustomObject]@{ Name = $map.Name; Heading = $heading; LegacyName = $map.Legacy; LineNumber = $ln; EndLine = $lines.Count }
             $sections.Add($current)
             if (-not $map.Name) { AddProblem $ln "Unknown section '## $heading'; lines under it are not read as tasks" }
-            elseif ($map.Legacy) { AddProblem $ln "Section '## $heading' uses the legacy name Active; rename it to Sprint" }
+            elseif ($map.Legacy) { AddProblem $ln "Section '## $heading' uses the legacy name $(($heading -replace '[^\p{L}]', '')); rename it to Current" }
             continue
         }
         if (-not $current -or -not $current.Name) { continue }

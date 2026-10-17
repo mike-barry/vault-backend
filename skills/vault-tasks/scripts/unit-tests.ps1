@@ -76,7 +76,7 @@ Run-Test 'Tasks.md contains all required sections' {
     New-TestFile 'Projects\My-Project\.placeholder'
     Invoke-Script -Path 'Projects\My-Project' | Out-Null
     (Assert-FileContains 'Projects\My-Project\Tasks.md' '## 🔔 Reminders') -and
-    (Assert-FileContains 'Projects\My-Project\Tasks.md' '## 🔥 Sprint') -and
+    (Assert-FileContains 'Projects\My-Project\Tasks.md' '## 🔥 Current') -and
     (Assert-FileContains 'Projects\My-Project\Tasks.md' '## 🧱 Blocked') -and
     (Assert-FileContains 'Projects\My-Project\Tasks.md' '## 📋 Backlog') -and
     (Assert-FileContains 'Projects\My-Project\Tasks.md' '## 🗺️ Side Quests') -and

@@ -90,12 +90,12 @@ $A = @(
     ''
     '- Remind one'
     ''
-    '## 🔥 Sprint'
+    '## 🔥 Current'
     ''
     '- [ ] **Alpha** - first | 🆔 1 ➕ 2026-01-01'
     '    - alpha child'
     ''
-    '- [/] Beta #list/x | 📅 2026-02-01 🆔 2 ➕ 2026-01-02'
+    '- [/] Beta #group/x | 📅 2026-02-01 🆔 2 ➕ 2026-01-02'
     ''
     '## 🧱 Blocked'
     ''
@@ -113,7 +113,7 @@ $A = @(
 $B = @(
     '# P Tasks'
     ''
-    '## 🔥 Sprint'
+    '## 🔥 Current'
     '- [ ] One | 🆔 10 ➕ 2026-01-01'
     '- [ ] Two | 🆔 11 ➕ 2026-01-01'
     '## 📋 Backlog'
@@ -149,12 +149,12 @@ Run-Test 'list: whole repo, file order, object shape' {
     $a = @($r.Json)[0]
     $props = @($a.PSObject.Properties.Name) -join ','
     Expect ($props -eq 'Id,IdNumber,File,LineNumber,Section,Status,Symbol,Title,Text,Tags,Link,Promoted,Priority,Start,Scheduled,Due,Created,DoneDate,CancelledDate,Extra,Children,Raw') $props
-    Expect ($a.File -eq $ARel -and $a.LineNumber -eq 12 -and $a.Section -eq 'Sprint' -and $a.Title -eq 'Alpha' -and $a.Text -eq 'first') "alpha $($a | ConvertTo-Json -Compress)"
+    Expect ($a.File -eq $ARel -and $a.LineNumber -eq 12 -and $a.Section -eq 'Current' -and $a.Title -eq 'Alpha' -and $a.Text -eq 'first') "alpha $($a | ConvertTo-Json -Compress)"
     Expect ($a.Children -is [array] -and $a.Children.Count -eq 1 -and $a.Children[0] -eq '    - alpha child') 'children'
     Expect ($a.Tags -is [array] -and $a.Tags.Count -eq 0 -and $a.Extra -is [array]) 'empty arrays'
     Expect ($r.Out -match '"Tags": \[\]' -and $r.Out -match '"Children": \[\s*"    - alpha child"\s*\]') 'raw JSON arrays'
     $b = @($r.Json)[1]
-    Expect ($b.Tags.Count -eq 1 -and $b.Tags[0] -eq 'list/x' -and $b.Status -eq 'in-progress' -and $b.Due -eq '2026-02-01') 'beta'
+    Expect ($b.Tags.Count -eq 1 -and $b.Tags[0] -eq 'group/x' -and $b.Status -eq 'in-progress' -and $b.Due -eq '2026-02-01') 'beta'
     Ok
 }
 
@@ -171,7 +171,7 @@ Run-Test 'list: -Path folder, -Path file (either separator, absolute)' {
 
 Run-Test 'list: -Section, -Status, -Tag, -Id filters' {
     Set-Fixtures
-    $s = Invoke-Tasks 'list' @{ Section = @('Sprint', 'done') }
+    $s = Invoke-Tasks 'list' @{ Section = @('Current', 'done') }
     $st = Invoke-Tasks 'list' @{ Status = 'in-progress' }
     $t = Invoke-Tasks 'list' @{ Tag = @('#HOME', 'nope') }
     $i = Invoke-Tasks 'list' @{ Id = @(3, 11) }
@@ -188,7 +188,7 @@ Run-Test 'list: empty result is [] ; bad filter values error' {
     Set-Fixtures
     $r = Invoke-Tasks 'list' @{ Tag = 'missing' }
     Expect ($r.Code -eq 0 -and $r.Out.Trim() -eq '[]') "out: $($r.Out)"
-    Expect-Error (Invoke-Tasks 'list' @{ Section = 'Nope' }) "^Unknown section 'Nope'\. Use one of: Sprint, Blocked, Backlog, SideQuests, Done, Reminders$"
+    Expect-Error (Invoke-Tasks 'list' @{ Section = 'Nope' }) "^Unknown section 'Nope'\. Use one of: Current, Blocked, Backlog, SideQuests, Done, Reminders$"
     Expect-Error (Invoke-Tasks 'list' @{ Status = 'started' }) "^Unknown status 'started'\. Use one of: todo, in-progress, done, cancelled$"
     Expect-Error (Invoke-Tasks 'list' @{ Path = 'No/Such' }) '^Path not found: No/Such$'
     Ok
@@ -196,7 +196,7 @@ Run-Test 'list: empty result is [] ; bad filter values error' {
 
 Run-Test 'list: Archive folders are skipped' {
     Set-Fixtures
-    New-TestFile 'Archive/Old/Tasks.md' (Text @('## 🔥 Sprint', '', '- [ ] Archived | 🆔 50'))
+    New-TestFile 'Archive/Old/Tasks.md' (Text @('## 🔥 Current', '', '- [ ] Archived | 🆔 50'))
     $r = Invoke-Tasks 'list'
     Expect (-not (@($r.Json | ForEach-Object Id) -contains '50')) 'archived task listed'
     Ok
@@ -239,10 +239,21 @@ Run-Test 'check: every code, plan links ignored, exit 0' {
     Ok
 }
 
+Run-Test 'check: a Sprint heading is a legacy name for Current' {
+    New-TestFile 'Tasks.md' (Text @('## 🔥 Sprint', '- [ ] a | 🆔 1 ➕ 2026-01-01'))
+    $r = Invoke-Tasks 'check'
+    $got = @($r.Json | ForEach-Object { "$($_.LineNumber):$($_.Code)" }) -join ' '
+    Expect ($r.Code -eq 0 -and $got -eq '1:LegacyHeading') "got $got"
+    Expect (@($r.Json)[0].Message -eq "Section '## 🔥 Sprint' uses the legacy name Sprint; rename it to Current") @($r.Json)[0].Message
+    $l = Invoke-Tasks 'list'
+    Expect (@($l.Json)[0].Section -eq 'Current') "section $(@($l.Json)[0].Section)"
+    Ok
+}
+
 Run-Test 'check: DoneOutsideDone for [x]/[-] outside Done; [/] valid in any non-Done section' {
     New-TestFile 'Tasks.md' (Text @(
-        '## 🔥 Sprint'
-        '- [x] done in sprint | 🆔 1 ➕ 2026-01-01 ✅ 2026-01-02'
+        '## 🔥 Current'
+        '- [x] done in current | 🆔 1 ➕ 2026-01-01 ✅ 2026-01-02'
         '## 📋 Backlog'
         '- [/] started in backlog | 🆔 2 ➕ 2026-01-01'
         '- [-] cancelled in backlog | 🆔 3 ➕ 2026-01-01 ❌ 2026-01-02'
@@ -254,13 +265,13 @@ Run-Test 'check: DoneOutsideDone for [x]/[-] outside Done; [/] valid in any non-
     $r = Invoke-Tasks 'check'
     $got = @($r.Json | ForEach-Object { "$($_.LineNumber):$($_.Code)" }) -join ' '
     Expect ($r.Code -eq 0 -and $got -eq '2:DoneOutsideDone 5:DoneOutsideDone') "got $got"
-    Expect (@($r.Json)[0].Message -eq 'A done task is in section Sprint; only Done holds [x] and [-]') @($r.Json)[0].Message
+    Expect (@($r.Json)[0].Message -eq 'A done task is in section Current; only Done holds [x] and [-]') @($r.Json)[0].Message
     Ok
 }
 
 Run-Test 'add/update: cannot put an open task in Done or a done task outside it' {
     Set-Fixtures
-    Expect-Error (Invoke-Tasks 'add' @{ Path = $ARel; Title = 'x'; Section = 'Done' }) '^Use -Action done or -Action cancel to put a task in Done; add takes Sprint, Blocked, Backlog, SideQuests, or Reminders$'
+    Expect-Error (Invoke-Tasks 'add' @{ Path = $ARel; Title = 'x'; Section = 'Done' }) '^Use -Action done or -Action cancel to put a task in Done; add takes Current, Blocked, Backlog, SideQuests, or Reminders$'
     Expect-Error (Invoke-Tasks 'update' @{ Id = 4; Section = 'Backlog' }) '^Task 4 is done; pass -Status todo or in-progress to move it out of Done$'
     Expect-File $ARel (Text $A)
     $r = Invoke-Tasks 'update' @{ Id = 4; Section = 'Backlog'; Status = 'todo' }
@@ -270,12 +281,92 @@ Run-Test 'add/update: cannot put an open task in Done or a done task outside it'
 
 Run-Test 'check: clean file gives [] ; -Path scopes problems and orphans' {
     Set-Fixtures
-    New-TestFile 'Areas/Z/Tasks.md' (Text @('## 🔥 Sprint', '- [ ] no id'))
+    New-TestFile 'Areas/Z/Tasks.md' (Text @('## 🔥 Current', '- [ ] no id'))
     New-TestFile 'Areas/Z/Task-99-Orphan.md' "# x`n"
     $a = Invoke-Tasks 'check' @{ Path = 'Areas/A' }
     $z = Invoke-Tasks 'check' @{ Path = 'Areas/Z/Tasks.md' }
     Expect ($a.Code -eq 0 -and $a.Out.Trim() -eq '[]') "A: $($a.Out)"
     Expect ((@($z.Json | ForEach-Object Code) -join ',') -eq 'MissingId,MissingCreated,OrphanDoc') "Z: $($z.Out)"
+    Ok
+}
+
+# ===========================================================================
+Write-Host "`n-- groups --"
+
+# Two files: alpha in both (one done), beta in G1 only, beta-two (a name extending beta) in G2.
+function Set-GroupFixtures {
+    New-TestFile 'Areas/G1/Tasks.md' (Text @(
+        '## 🔥 Current'
+        '- [ ] a #group/beta | 🆔 1 ➕ 2026-01-01'
+        '- [/] b #home #group/alpha #group/alpha | 🆔 2 ➕ 2026-01-01'
+        '## ✅ Done'
+        '- [x] c #group/alpha | 🆔 3 ➕ 2026-01-01 ✅ 2026-01-02'
+    ))
+    New-TestFile 'Projects/G2/Tasks.md' (Text @(
+        '## 🔥 Current'
+        '- [ ] d #group/alpha | 🆔 4 ➕ 2026-01-01'
+        '- [ ] e #group/beta-two | 🆔 5 ➕ 2026-01-01'
+    ))
+}
+function Set-ViewFixtures {
+    New-TestFile 'Inbox/View-Sprint.md' (Text @('# Sprint', '', '```tasks', 'tag includes #group/alpha', '```'))
+    New-TestFile 'Tasks/View-Open.md' (Text @('# Open', '', 'Filter: #group/alpha.'))
+    New-TestFile 'Inbox/View-Other.md' (Text @('# Other', '', '```tasks', 'tag includes #group/beta-two', '```'))
+    New-TestFile 'Archive/View-Old.md' (Text @('# Old', '', '#group/alpha'))
+    New-TestFile 'Areas/G1/Archive/View-Older.md' (Text @('# Older', '', '#group/alpha'))
+    New-TestFile 'Inbox/Notes.md' (Text @('#group/alpha in a non-view file'))
+}
+function Format-Group($G) { "$($G.Group):$($G.Open):$($G.Closed):$(@($G.Files) -join '+'):$(@($G.Views) -join '+')" }
+
+Run-Test 'groups: counts, Files, sort order, object shape' {
+    Set-GroupFixtures
+    $r = Invoke-Tasks 'groups'
+    Expect ($r.Code -eq 0) "exit $($r.Code): $($r.Err)"
+    $got = @($r.Json | ForEach-Object { Format-Group $_ }) -join ' '
+    $want = 'alpha:2:1:Areas/G1/Tasks.md+Projects/G2/Tasks.md: beta:1:0:Areas/G1/Tasks.md: beta-two:1:0:Projects/G2/Tasks.md:'
+    Expect ($got -eq $want) "got  $got`n    want $want"
+    $props = @(@($r.Json)[0].PSObject.Properties.Name) -join ','
+    Expect ($props -eq 'Group,Open,Closed,Files,Views') $props
+    $beta = @($r.Json)[1]
+    Expect ($beta.Files -is [array] -and $beta.Views -is [array] -and $beta.Views.Count -eq 0) 'single Files and empty Views are arrays'
+    Expect ($r.Out -match '"Views": \[\]') "raw empty Views: $($r.Out)"
+    Ok
+}
+
+Run-Test 'groups: Views lists matching View-*.md repo-wide, Archive and other tags excluded' {
+    Set-GroupFixtures
+    Set-ViewFixtures
+    $r = Invoke-Tasks 'groups'
+    Expect ($r.Code -eq 0) "exit $($r.Code): $($r.Err)"
+    $got = @($r.Json | ForEach-Object { Format-Group $_ }) -join ' '
+    $want = 'alpha:2:1:Areas/G1/Tasks.md+Projects/G2/Tasks.md:Inbox/View-Sprint.md+Tasks/View-Open.md beta:1:0:Areas/G1/Tasks.md: beta-two:1:0:Projects/G2/Tasks.md:Inbox/View-Other.md'
+    Expect ($got -eq $want) "got  $got`n    want $want"
+    Ok
+}
+
+Run-Test 'groups: pwsh -File, -Path scopes counts but not Views' {
+    Set-GroupFixtures
+    Set-ViewFixtures
+    $before = (Get-TestFileContent 'Areas/G1/Tasks.md') + (Get-TestFileContent 'Projects/G2/Tasks.md')
+    $r = Invoke-TasksFile 'groups' @('-Path', 'Areas')
+    Expect ($r.Code -eq 0) "exit $($r.Code): $($r.Err)"
+    $got = @($r.Json | ForEach-Object { Format-Group $_ }) -join ' '
+    $want = 'alpha:1:1:Areas/G1/Tasks.md:Inbox/View-Sprint.md+Tasks/View-Open.md beta:1:0:Areas/G1/Tasks.md:'
+    Expect ($got -eq $want) "got  $got`n    want $want"
+    $f = Invoke-TasksFile 'groups' @('-Path', 'Projects/G2/Tasks.md')
+    $gotF = @($f.Json | ForEach-Object { Format-Group $_ }) -join ' '
+    Expect ($gotF -eq 'alpha:1:0:Projects/G2/Tasks.md:Inbox/View-Sprint.md+Tasks/View-Open.md beta-two:1:0:Projects/G2/Tasks.md:Inbox/View-Other.md') "file scope: $gotF"
+    Expect (((Get-TestFileContent 'Areas/G1/Tasks.md') + (Get-TestFileContent 'Projects/G2/Tasks.md')) -ceq $before) 'groups changed a file'
+    Ok
+}
+
+Run-Test 'groups: no grouping tags returns [] exactly' {
+    New-TestFile 'Inbox/View-Sprint.md' (Text @('#group/alpha'))
+    $A2 = @('## 🔥 Current', '- [ ] grouped-looking #groups/x #mygroup/y | 🆔 1 ➕ 2026-01-01')
+    New-TestFile 'Areas/N/Tasks.md' (Text $A2)
+    $r = Invoke-TasksFile 'groups'
+    Expect ($r.Code -eq 0 -and $r.Out.Trim() -eq '[]') "out: $($r.Out) $($r.Err)"
+    Expect-Error (Invoke-Tasks 'groups' @{ Path = 'No/Such' }) '^Path not found: No/Such$'
     Ok
 }
 
@@ -294,20 +385,20 @@ Run-Test 'add: defaults (Backlog, todo, next ID, created today), blank-separated
 
 Run-Test 'add: every optional field, children plain and pre-bulleted' {
     Set-Fixtures
-    $r = Invoke-Tasks 'add' @{ Path = $ARel; Title = 'Full'; Section = 'sprint'; Status = 'in-progress'; Text = 'with $285 text'
-        Tags = @('#list/w', 'b'); Priority = 'high'; Start = '2026-03-01'; Scheduled = '2026-03-02'; Due = '2026-03-03'
+    $r = Invoke-Tasks 'add' @{ Path = $ARel; Title = 'Full'; Section = 'current'; Status = 'in-progress'; Text = 'with $285 text'
+        Tags = @('#group/w', 'b'); Priority = 'high'; Start = '2026-03-01'; Scheduled = '2026-03-02'; Due = '2026-03-03'
         Children = @('plain child', '- [ ] box child', '- dash child') }
     Expect ($r.Code -eq 0) "exit $($r.Code): $($r.Err)"
-    $line = "- [/] **Full** - with `$285 text #list/w #b | ⏫ 🛫 2026-03-01 ⏳ 2026-03-02 📅 2026-03-03 🆔 12 ➕ $today"
+    $line = "- [/] **Full** - with `$285 text #group/w #b | ⏫ 🛫 2026-03-01 ⏳ 2026-03-02 📅 2026-03-03 🆔 12 ➕ $today"
     Expect-File $ARel (Text (Splice $A 11 0 @($line, '    - plain child', '    - [ ] box child', '    - dash child', '')))
     $j = $r.Json
-    Expect ($j.Priority -eq 'high' -and $j.Start -eq '2026-03-01' -and $j.Scheduled -eq '2026-03-02' -and $j.Due -eq '2026-03-03' -and (@($j.Tags) -join ',') -eq 'list/w,b' -and $j.Children.Count -eq 3 -and $j.Text -eq 'with $285 text') "out $($r.Out)"
+    Expect ($j.Priority -eq 'high' -and $j.Start -eq '2026-03-01' -and $j.Scheduled -eq '2026-03-02' -and $j.Due -eq '2026-03-03' -and (@($j.Tags) -join ',') -eq 'group/w,b' -and $j.Children.Count -eq 3 -and $j.Text -eq 'with $285 text') "out $($r.Out)"
     Ok
 }
 
 Run-Test 'add: compact section (heading then item) gets heading blank, no item blank' {
     Set-Fixtures
-    $r = Invoke-Tasks 'add' @{ Path = 'Projects/P'; Title = 'Zero'; Section = 'Sprint' }
+    $r = Invoke-Tasks 'add' @{ Path = 'Projects/P'; Title = 'Zero'; Section = 'Current' }
     Expect ($r.Code -eq 0) "exit $($r.Code): $($r.Err)"
     Expect-File $BRel (Text (Splice $B 3 0 @('', "- [ ] Zero | 🆔 12 ➕ $today")))
     Ok
@@ -317,18 +408,18 @@ Run-Test 'add: empty section before a heading, and at end of file' {
     Set-Fixtures
     $r1 = Invoke-Tasks 'add' @{ Path = $BRel; Title = 'Back' }
     Expect-File $BRel (Text (Splice $B 7 0 @("- [ ] Back | 🆔 12 ➕ $today", '')))
-    New-TestFile 'E/Tasks.md' (Text @('## 🔥 Sprint', '', '## 📋 Backlog'))
+    New-TestFile 'E/Tasks.md' (Text @('## 🔥 Current', '', '## 📋 Backlog'))
     $r2 = Invoke-Tasks 'add' @{ Path = 'E/Tasks.md'; Title = 'At end' }
     Expect ($r1.Code -eq 0 -and $r2.Code -eq 0) "$($r1.Err) $($r2.Err)"
-    Expect-File 'E/Tasks.md' (Text @('## 🔥 Sprint', '', '## 📋 Backlog', '', "- [ ] At end | 🆔 13 ➕ $today"))
+    Expect-File 'E/Tasks.md' (Text @('## 🔥 Current', '', '## 📋 Backlog', '', "- [ ] At end | 🆔 13 ➕ $today"))
     Ok
 }
 
 Run-Test 'add: empty section directly followed by the next heading' {
-    New-TestFile 'T/Tasks.md' (Text @('## 🔥 Sprint', '## 📋 Backlog'))
-    $r = Invoke-Tasks 'add' @{ Path = 'T'; Title = 'x'; Section = 'Sprint' }
+    New-TestFile 'T/Tasks.md' (Text @('## 🔥 Current', '## 📋 Backlog'))
+    $r = Invoke-Tasks 'add' @{ Path = 'T'; Title = 'x'; Section = 'Current' }
     Expect ($r.Code -eq 0) $r.Err
-    Expect-File 'T/Tasks.md' (Text @('## 🔥 Sprint', '', "- [ ] x | 🆔 1 ➕ $today", '', '## 📋 Backlog'))
+    Expect-File 'T/Tasks.md' (Text @('## 🔥 Current', '', "- [ ] x | 🆔 1 ➕ $today", '', '## 📋 Backlog'))
     Ok
 }
 
@@ -401,7 +492,7 @@ Run-Test 'update: -Section moves the block with its children' {
     $exp = @(
         $A[0..9]
         ''
-        '- [/] Beta #list/x | 📅 2026-02-01 🆔 2 ➕ 2026-01-02'
+        '- [/] Beta #group/x | 📅 2026-02-01 🆔 2 ➕ 2026-01-02'
         ''
         '## 🧱 Blocked'
         ''
@@ -424,7 +515,7 @@ Run-Test 'update: compact file move keeps the compact style' {
     Expect-Error $r "^Section 'SideQuests' not found in Projects/P/Tasks\.md$"
     $r = Invoke-Tasks 'update' @{ Id = 10; Section = 'Backlog' }
     Expect ($r.Code -eq 0) $r.Err
-    Expect-File $BRel (Text @('# P Tasks', '', '## 🔥 Sprint', '- [ ] Two | 🆔 11 ➕ 2026-01-01', '## 📋 Backlog', '', '- [ ] One | 🆔 10 ➕ 2026-01-01', '', '## ✅ Done'))
+    Expect-File $BRel (Text @('# P Tasks', '', '## 🔥 Current', '- [ ] Two | 🆔 11 ➕ 2026-01-01', '## 📋 Backlog', '', '- [ ] One | 🆔 10 ➕ 2026-01-01', '', '## ✅ Done'))
     Ok
 }
 
@@ -445,7 +536,7 @@ Run-Test 'update: errors (done/cancelled status, Done section, unknown ID, nothi
 
 Run-Test 'update: duplicate ID is an error naming both places' {
     Set-Fixtures
-    New-TestFile 'Areas/D/Tasks.md' (Text @('## 🔥 Sprint', '- [ ] dup | 🆔 1'))
+    New-TestFile 'Areas/D/Tasks.md' (Text @('## 🔥 Current', '- [ ] dup | 🆔 1'))
     Expect-Error (Invoke-Tasks 'update' @{ Id = 1; Title = 'x' }) '^Task 1 is on more than one line \(Areas/A/Tasks\.md:12, Areas/D/Tasks\.md:2\); fix the duplicate ID first$'
     Ok
 }
@@ -461,7 +552,7 @@ Run-Test 'done: moves block to top of Done, drops fields/tags/text, keeps childr
     $exp = @(
         $A[0..9]
         ''
-        '- [/] Beta #list/x | 📅 2026-02-01 🆔 2 ➕ 2026-01-02'
+        '- [/] Beta #group/x | 📅 2026-02-01 🆔 2 ➕ 2026-01-02'
         $A[15..25]
         "- [x] Alpha | 🆔 1 ➕ 2026-01-01 ✅ $today"
         '    - alpha child'
@@ -479,7 +570,7 @@ Run-Test 'cancel: symbol and cancelled date; compact Done at end of file' {
     Set-Fixtures
     $r = Invoke-Tasks 'cancel' @{ Id = 11 }
     Expect ($r.Code -eq 0) $r.Err
-    Expect-File $BRel (Text @('# P Tasks', '', '## 🔥 Sprint', '- [ ] One | 🆔 10 ➕ 2026-01-01', '## 📋 Backlog', '', '## ✅ Done', '', "- [-] Two | 🆔 11 ➕ 2026-01-01 ❌ $today"))
+    Expect-File $BRel (Text @('# P Tasks', '', '## 🔥 Current', '- [ ] One | 🆔 10 ➕ 2026-01-01', '## 📋 Backlog', '', '## ✅ Done', '', "- [-] Two | 🆔 11 ➕ 2026-01-01 ❌ $today"))
     Expect ($r.Json.Status -eq 'cancelled' -and $r.Json.CancelledDate -eq $today -and $null -eq $r.Json.DoneDate) $r.Out
     Expect-Error (Invoke-Tasks 'done' @{ Id = 11 }) '^Task 11 is already cancelled$'
     Expect-Error (Invoke-Tasks 'cancel' @{ Id = 4 }) '^Task 4 is already done$'
@@ -488,7 +579,7 @@ Run-Test 'cancel: symbol and cancelled date; compact Done at end of file' {
 
 Run-Test 'done: LinkedDoc for a Task- link (present, missing) and null for a plan link' {
     New-TestFile 'Areas/L/Tasks.md' (Text @(
-        '## 🔥 Sprint'
+        '## 🔥 Current'
         ''
         '- [ ] [[Task-20-Has-Doc]] #t | 📅 2026-05-01 🆔 20 ➕ 2026-01-01'
         '- [ ] [[Task-21-No-Doc]] | 🆔 21 ➕ 2026-01-01'
@@ -506,7 +597,7 @@ Run-Test 'done: LinkedDoc for a Task- link (present, missing) and null for a pla
     Expect ($b.Code -eq 0 -and $null -eq $b.Json.LinkedDoc) "b: $($b.Out)"
     Expect ($c.Code -eq 0 -and $null -eq $c.Json.LinkedDoc -and $c.Json.Title -eq '[[Plan-Thing]]') "c: $($c.Out)"
     Expect-File 'Areas/L/Tasks.md' (Text @(
-        '## 🔥 Sprint'
+        '## 🔥 Current'
         ''
         '## ✅ Done'
         ''
@@ -564,13 +655,13 @@ Run-Test 'promote: beside Tasks.md without Inbox/, intro from title, no Notes, o
 }
 
 Run-Test 'promote: H1 in Title Case (rest of each word as typed), intro capitalized' {
-    New-TestFile 'Tasks.md' (Text @('## 🔥 Sprint', '', '- [ ] **fix the `use_skill` MCP thing (now)** - because iPhone sync broke | 🆔 7 ➕ 2026-01-01'))
+    New-TestFile 'Tasks.md' (Text @('## 🔥 Current', '', '- [ ] **fix the `use_skill` MCP thing (now)** - because iPhone sync broke | 🆔 7 ➕ 2026-01-01'))
     $r = Invoke-Tasks 'promote' @{ Id = 7 }
     Expect ($r.Code -eq 0) $r.Err
     $doc = Get-TestFileContent 'Task-7-Fix-The-Use-Skill-MCP-Thing-Now.md'
     Expect ($doc.Contains("`n# Fix The ``use_skill`` MCP Thing (Now)`n")) "doc: $doc"
     Expect ($doc.Contains("`nBecause iPhone sync broke. Tracked in [[Tasks]].`n")) "doc: $doc"
-    $s = Invoke-Tasks 'add' @{ Path = 'Tasks.md'; Title = 'x'; Section = 'Sprint' }
+    $s = Invoke-Tasks 'add' @{ Path = 'Tasks.md'; Title = 'x'; Section = 'Current' }
     $t = Invoke-Tasks 'promote' @{ Id = 8; Title = 'an override title'; Intro = 'lower intro' }
     $doc2 = Get-TestFileContent 'Task-8-An-Override-Title.md'
     Expect ($doc2.Contains("`n# An Override Title`n") -and $doc2.Contains("`nLower intro. Tracked in [[Tasks]].`n")) "doc2: $doc2 $($t.Err)"
@@ -578,17 +669,17 @@ Run-Test 'promote: H1 in Title Case (rest of each word as typed), intro capitali
 }
 
 Run-Test 'write verbs stamp a missing created date on the line they touch' {
-    New-TestFile 'Tasks.md' (Text @('## 🔥 Sprint', '', '- [ ] a | 🆔 1', '- [ ] b | 🆔 2', '- [ ] c | 🆔 3', '', '## ✅ Done'))
+    New-TestFile 'Tasks.md' (Text @('## 🔥 Current', '', '- [ ] a | 🆔 1', '- [ ] b | 🆔 2', '- [ ] c | 🆔 3', '', '## ✅ Done'))
     $u = Invoke-Tasks 'update' @{ Id = 1; Title = 'a2' }
     Expect ($u.Code -eq 0 -and $u.Json.Created -eq $today) "update: $($u.Out) $($u.Err)"
     $d = Invoke-Tasks 'done' @{ Id = 2 }
     $c = Invoke-Tasks 'cancel' @{ Id = 3 }
     Expect ($d.Json.Created -eq $today -and $c.Json.Created -eq $today) 'done/cancel stamp created'
-    Expect-File 'Tasks.md' (Text @('## 🔥 Sprint', '', "- [ ] a2 | 🆔 1 ➕ $today", '', '## ✅ Done', '', "- [-] c | 🆔 3 ➕ $today ❌ $today", "- [x] b | 🆔 2 ➕ $today ✅ $today"))
-    New-TestFile 'Tasks.md' (Text @('## 🔥 Sprint', '', '- [ ] p | 🆔 4'))
+    Expect-File 'Tasks.md' (Text @('## 🔥 Current', '', "- [ ] a2 | 🆔 1 ➕ $today", '', '## ✅ Done', '', "- [-] c | 🆔 3 ➕ $today ❌ $today", "- [x] b | 🆔 2 ➕ $today ✅ $today"))
+    New-TestFile 'Tasks.md' (Text @('## 🔥 Current', '', '- [ ] p | 🆔 4'))
     $p = Invoke-Tasks 'promote' @{ Id = 4 }
     Expect ($p.Code -eq 0) $p.Err
-    Expect-File 'Tasks.md' (Text @('## 🔥 Sprint', '', "- [ ] [[Task-4-P]] | 🆔 4 ➕ $today"))
+    Expect-File 'Tasks.md' (Text @('## 🔥 Current', '', "- [ ] [[Task-4-P]] | 🆔 4 ➕ $today"))
     Ok
 }
 
@@ -598,7 +689,7 @@ Run-Test 'pwsh -File: comma- and newline-delimited array parameters' {
     $r = Invoke-TasksFile 'add' @('-Path', $ARel, '-Title', 'Filed', '-Tags', 'a, b,,#c', '-Children', "one, with comma${nl}- [ ] two")
     Expect ($r.Code -eq 0) "add: $($r.Err)"
     Expect ((@($r.Json.Tags) -join ',') -eq 'a,b,c' -and $r.Json.Children.Count -eq 2 -and $r.Json.Children[0] -eq '    - one, with comma' -and $r.Json.Children[1] -eq '    - [ ] two') $r.Out
-    $l = Invoke-TasksFile 'list' @('-Id', '12, 3', '-Section', 'Backlog,Sprint', '-Status', 'todo,in-progress', '-Tag', 'nope,c')
+    $l = Invoke-TasksFile 'list' @('-Id', '12, 3', '-Section', 'Backlog,Current', '-Status', 'todo,in-progress', '-Tag', 'nope,c')
     Expect ((@($l.Json | ForEach-Object Id) -join ',') -eq '12') "list: $($l.Out) $($l.Err)"
     $u = Invoke-TasksFile 'update' @('-Id', '12', '-AddTag', 'x,y', '-RemoveTag', 'a,b', '-AddChild', "three, too`r`nfour")
     Expect ($u.Code -eq 0 -and (@($u.Json.Tags) -join ',') -eq 'c,x,y' -and $u.Json.Children.Count -eq 4 -and $u.Json.Children[3] -eq '    - four') "update: $($u.Out) $($u.Err)"
@@ -621,7 +712,7 @@ Run-Test 'promote: errors when already promoted or the doc exists' {
 Write-Host "`n-- prune --"
 
 $P = @(
-    '## 🔥 Sprint'
+    '## 🔥 Current'
     ''
     '- [ ] Open | 🆔 1'
     ''
@@ -652,17 +743,17 @@ Run-Test 'prune: -Days override and -Apply removes blocks without double blanks'
     $r = Invoke-Tasks 'prune' @{ Days = 1; Apply = $true }
     Expect ($r.Code -eq 0) $r.Err
     Expect ($r.Json.Applied -eq $true -and (@($r.Json.Tasks | ForEach-Object Id) -join ',') -eq '2,3,4,5') $r.Out
-    Expect-File 'Tasks.md' (Text @('## 🔥 Sprint', '', '- [ ] Open | 🆔 1', '', '## ✅ Done', '', '- [x] Undated | 🆔 6'))
+    Expect-File 'Tasks.md' (Text @('## 🔥 Current', '', '- [ ] Open | 🆔 1', '', '## ✅ Done', '', '- [x] Undated | 🆔 6'))
     $e = Invoke-Tasks 'prune' @{ Days = 1 }
     Expect ($e.Out -match '"Tasks": \[\]') "empty Tasks: $($e.Out)"
     Ok
 }
 
 Run-Test 'prune: removing everything leaves the Done heading last' {
-    New-TestFile 'Tasks.md' (Text @('## 🔥 Sprint', '', '## ✅ Done', '', "- [x] a | ✅ $(DaysAgo 30)", '', "- [x] b | ✅ $(DaysAgo 30)"))
+    New-TestFile 'Tasks.md' (Text @('## 🔥 Current', '', '## ✅ Done', '', "- [x] a | ✅ $(DaysAgo 30)", '', "- [x] b | ✅ $(DaysAgo 30)"))
     $r = Invoke-Tasks 'prune' @{ Apply = $true }
     Expect ($r.Code -eq 0) $r.Err
-    Expect-File 'Tasks.md' (Text @('## 🔥 Sprint', '', '## ✅ Done'))
+    Expect-File 'Tasks.md' (Text @('## 🔥 Current', '', '## ✅ Done'))
     Ok
 }
 
@@ -673,7 +764,7 @@ Run-Test 'backfill: stamps across two files in order, unique IDs, idempotent' {
     New-TestFile 'A/Tasks.md' (Text @(
         '## 🔔 Reminders'
         '- reminder stays'
-        '## 🔥 Sprint'
+        '## 🔥 Current'
         '- [ ] first'
         '    - [ ] nested child | 🆔 77'
         '- [ ] has id | 🆔 40'
@@ -690,7 +781,7 @@ Run-Test 'backfill: stamps across two files in order, unique IDs, idempotent' {
     Expect-File 'A/Tasks.md' (Text @(
         '## 🔔 Reminders'
         '- reminder stays'
-        '## 🔥 Sprint'
+        '## 🔥 Current'
         "- [ ] first | 🆔 41 ➕ $today"
         '    - [ ] nested child | 🆔 77'
         "- [ ] has id | 🆔 40 ➕ $today"
@@ -707,11 +798,11 @@ Run-Test 'backfill: stamps across two files in order, unique IDs, idempotent' {
 }
 
 Run-Test 'backfill: -Path scope still takes the next ID from the whole repo' {
-    New-TestFile 'A/Tasks.md' (Text @('## 🔥 Sprint', '- [ ] a'))
-    New-TestFile 'B/Tasks.md' (Text @('## 🔥 Sprint', '- [ ] b | 🆔 9 ➕ 2026-01-01'))
+    New-TestFile 'A/Tasks.md' (Text @('## 🔥 Current', '- [ ] a'))
+    New-TestFile 'B/Tasks.md' (Text @('## 🔥 Current', '- [ ] b | 🆔 9 ➕ 2026-01-01'))
     $r = Invoke-Tasks 'backfill' @{ Path = 'A' }
     Expect ($r.Code -eq 0 -and @($r.Json).Count -eq 1 -and @($r.Json)[0].Id -eq '10') $r.Out
-    Expect-File 'A/Tasks.md' (Text @('## 🔥 Sprint', "- [ ] a | 🆔 10 ➕ $today"))
+    Expect-File 'A/Tasks.md' (Text @('## 🔥 Current', "- [ ] a | 🆔 10 ➕ $today"))
     Ok
 }
 

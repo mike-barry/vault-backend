@@ -552,13 +552,15 @@ try {
         '## 🗺️ Side Quests', '', '## ✅ Done', '', '## Notes', ''
     ) -join "`n")
     New-TestFile 'Areas/Demo/Inbox/Task-9004-Orphan.md' "# Orphan`n"
-    New-TestFile 'Areas/Clean/Tasks.md' (@('# Clean Tasks', '', '## 🔥 Sprint', '', '- [ ] fine | 🆔 9005 ➕ 2026-10-17', '', '## ✅ Done', '') -join "`n")
+    New-TestFile 'Areas/Legacy/Tasks.md' (@('# Legacy Tasks', '', '## 🔥 Sprint', '', '- [ ] old name | 🆔 9006 ➕ 2026-10-17', '', '## ✅ Done', '') -join "`n")
+    New-TestFile 'Areas/Clean/Tasks.md' (@('# Clean Tasks', '', '## 🔥 Current', '', '- [ ] fine | 🆔 9005 ➕ 2026-10-17', '', '## ✅ Done', '') -join "`n")
 
     $out = Invoke-Lint 'check-task-lines.ps1'
     foreach ($code in 'LegacyHeading', 'CheckboxInReminders', 'MissingId', 'MissingCreated', 'EmptyTitle', 'MissingDoc', 'OrphanDoc', 'DoneOutsideDone', 'UnknownSection') {
         Assert-That "reports $code" ($out -match "$code \(\d+\):") $out
     }
     Assert-That 'names the file and line'    ($out -match 'Areas[\\/]Demo[\\/]Tasks\.md:9') $out
+    Assert-That 'Sprint heading reported as legacy' ($out -match 'LegacyHeading \(2\):' -and $out -match 'Areas[\/]Legacy[\/]Tasks\.md:3 - .*legacy name Sprint; rename it to Current') $out
     Assert-That 'clean file not reported'    ($out -notmatch 'Clean[\\/]Tasks\.md') $out
     Assert-That 'totals the problems'        ($out -match '\d+ task line problem\(s\) found') $out
 

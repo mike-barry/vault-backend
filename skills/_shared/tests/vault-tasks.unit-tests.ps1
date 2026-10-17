@@ -76,12 +76,12 @@ Assert-Parse 'strikethrough preserved in text' '- [/] **Build the vault-mcp skil
     Title = 'Build the vault-mcp skill'; Created = '2026-07-19'
     Text = '~~client-side start/troubleshoot + recovery~~ (completed) + elevation-driver; see [[Idea-Vault-MCP-Skill]]. Blocked until ...' })
 
-Assert-Parse 'promoted link title with tag and id' '- [ ] [[Task-17-Reconsider-Task-System]] #list/weekend-2026-10-17 | 📅 2026-10-24 🆔 17 ➕ 2026-10-17' (E @{
+Assert-Parse 'promoted link title with tag and id' '- [ ] [[Task-17-Reconsider-Task-System]] #group/weekend-2026-10-17 | 📅 2026-10-24 🆔 17 ➕ 2026-10-17' (E @{
     Title = '[[Task-17-Reconsider-Task-System]]'; Text = ''; Link = 'Task-17-Reconsider-Task-System'; Promoted = $true
-    Tags = @('list/weekend-2026-10-17'); Due = '2026-10-24'; Id = '17'; IdNumber = 17; Created = '2026-10-17' })
+    Tags = @('group/weekend-2026-10-17'); Due = '2026-10-24'; Id = '17'; IdNumber = 17; Created = '2026-10-17' })
 
-Assert-Parse 'plain title with hyphen, tag, id' '- [ ] Mow, mulch leaves, string trim - evening, ~2h #list/weekend-2026-10-17 | 🆔 18 ➕ 2026-10-17' (E @{
-    Title = 'Mow, mulch leaves, string trim - evening, ~2h'; Text = ''; Tags = @('list/weekend-2026-10-17'); Id = '18'; IdNumber = 18; Created = '2026-10-17' })
+Assert-Parse 'plain title with hyphen, tag, id' '- [ ] Mow, mulch leaves, string trim - evening, ~2h #group/weekend-2026-10-17 | 🆔 18 ➕ 2026-10-17' (E @{
+    Title = 'Mow, mulch leaves, string trim - evening, ~2h'; Text = ''; Tags = @('group/weekend-2026-10-17'); Id = '18'; IdNumber = 18; Created = '2026-10-17' })
 
 Assert-Parse 'aliased wikilink title: Link drops alias and path' '- [ ] [[Areas/Vault-Dev/Task-3-Foo|Foo]] | 🆔 3' (E @{
     Title = '[[Areas/Vault-Dev/Task-3-Foo|Foo]]'; Link = 'Task-3-Foo'; Promoted = $true; Id = '3'; IdNumber = 3 })
@@ -136,8 +136,8 @@ $canonicalLines = @(
     '- [/] **Skill progressive disclosure audit** - See [[Plan-Skill-Progressive-Disclosure]]. | ➕ 2026-07-12'
     '- [ ] **Apply to INL 2174** - Software Developer & AI Automation Specialist; update a cover letter from the originals. See [[INL-2174-Software-Developer-AI-Automation-Specialist]] and [[Plan-INL-Applications]] | 📅 2026-10-24 ➕ 2026-10-12'
     '- [/] **Build the vault-mcp skill** - ~~client-side start/troubleshoot + recovery~~ (completed) + elevation-driver; see [[Idea-Vault-MCP-Skill]]. Blocked until ... | ➕ 2026-07-19'
-    '- [ ] [[Task-17-Reconsider-Task-System]] #list/weekend-2026-10-17 | 📅 2026-10-24 🆔 17 ➕ 2026-10-17'
-    '- [ ] Mow, mulch leaves, string trim - evening, ~2h #list/weekend-2026-10-17 | 🆔 18 ➕ 2026-10-17'
+    '- [ ] [[Task-17-Reconsider-Task-System]] #group/weekend-2026-10-17 | 📅 2026-10-24 🆔 17 ➕ 2026-10-17'
+    '- [ ] Mow, mulch leaves, string trim - evening, ~2h #group/weekend-2026-10-17 | 🆔 18 ➕ 2026-10-17'
     '- [x] Decide how DNS-over-HTTPS clients should be handled | ➕ 2026-08-16 ✅ 2026-08-17'
     '- [-] Set `webserver.acl` on pihole | ➕ 2026-08-16 ❌ 2026-08-16'
     '- [ ] **Full** - every field #a #b/c | 🔺 🛫 2026-01-01 ⏳ 2026-01-02 📅 2026-01-03 🆔 9 ➕ 2025-12-31 🔁 every week ⛔ 3,4'
@@ -214,30 +214,40 @@ Run-Test 'file model: sections, tasks, children, reminders, problems, CRLF, scop
     New-TestFile 'Areas/Fix/Tasks.md' (($fixture -join "`r`n") + "`r`n")
     $m = Get-TaskFile -Path (Join-Path $testRoot 'Areas' 'Fix' 'Tasks.md') -VaultRoot $testRoot
     $names = ($m.Sections | ForEach-Object { if ($_.Name) { $_.Name } else { '?' } }) -join ','
-    $sprint = $m.Sections | Where-Object { $_.Name -eq 'Sprint' }
+    $cur = $m.Sections | Where-Object { $_.Name -eq 'Current' }
     $parent = $m.Tasks[0]
     $probs = ($m.Problems | ForEach-Object { "$($_.LineNumber):$($_.Message)" }) -join ' / '
-    Assert-That 'sections in order'              ($names -eq 'Reminders,Sprint,Blocked,Backlog,?,SideQuests,Done') $names
-    Assert-That 'Active maps to Sprint as legacy' ($sprint.LegacyName -and $sprint.Heading -eq '🔥 Active' -and $sprint.LineNumber -eq 11 -and $sprint.EndLine -eq 20) "$($sprint | Out-String)"
+    Assert-That 'sections in order'              ($names -eq 'Reminders,Current,Blocked,Backlog,?,SideQuests,Done') $names
+    Assert-That 'Active maps to Current as legacy' ($cur.LegacyName -and $cur.Heading -eq '🔥 Active' -and $cur.LineNumber -eq 11 -and $cur.EndLine -eq 20) "$($cur | Out-String)"
     Assert-That 'CRLF detected'                  ($m.LineEnding -eq "`r`n")
     Assert-That 'scope read'                     ($m.Scope -eq 'personal')
     Assert-That 'Lines as read, no trailing empty' ($m.Lines.Count -eq $fixture.Count -and $m.Lines[0] -eq '---')
     Assert-That 'six tasks (nested, reminder, unknown-section excluded)' ($m.Tasks.Count -eq 6) (($m.Tasks | ForEach-Object Title) -join ',')
     Assert-That 'parent children at 2/4/6 spaces incl inner blank' ($parent.Children.Count -eq 4 -and $parent.Children[1] -eq '    - [ ] Research' -and $parent.Children[3] -eq '      - six-space child after a blank') ($parent.Children -join '|')
-    Assert-That 'parent line and end'            ($parent.LineNumber -eq 13 -and $parent.EndLine -eq 17 -and $parent.Section -eq 'Sprint')
+    Assert-That 'parent line and end'            ($parent.LineNumber -eq 13 -and $parent.EndLine -eq 17 -and $parent.Section -eq 'Current')
     Assert-That 'File is repo-relative with /'   ($parent.File -eq '.vault-tasks-lib-tests/Areas/Fix/Tasks.md' -or $parent.File -eq 'Areas/Fix/Tasks.md') $parent.File
     Assert-That 'second task has no children'    ($m.Tasks[1].Children.Count -eq 0 -and $m.Tasks[1].EndLine -eq 19 -and $m.Tasks[1].IdNumber -eq 7)
-    Assert-That 'sections assigned'              ((($m.Tasks | ForEach-Object Section) -join ',') -eq 'Sprint,Sprint,Blocked,Backlog,SideQuests,Done')
+    Assert-That 'sections assigned'              ((($m.Tasks | ForEach-Object Section) -join ',') -eq 'Current,Current,Blocked,Backlog,SideQuests,Done')
     Assert-That 'one reminder'                   ($m.Reminders.Count -eq 1 -and $m.Reminders[0].Text -eq 'Halo releases 2026-07-28' -and $m.Reminders[0].LineNumber -eq 8)
     Assert-That 'problem: checkbox in reminders' ($probs -match '9:Checkbox line in the Reminders') $probs
-    Assert-That 'problem: legacy Active'         ($probs -match '11:.*rename it to Sprint') $probs
+    Assert-That 'problem: legacy Active'         ($probs -match '11:.*rename it to Current') $probs
     Assert-That 'problem: empty title'           ($probs -match '22:Checkbox line has an empty title') $probs
     Assert-That 'problem: unknown section'       ($probs -match "25:Unknown section '## Notes'") $probs
     $m.Problems.Count -eq 4
 }
 
+Run-Test 'section map: Current canonical, Sprint and Active legacy' {
+    $c = Get-TaskSectionName '🔥 Current'
+    $s = Get-TaskSectionName '🔥 Sprint'
+    $a = Get-TaskSectionName 'Active'
+    Assert-That 'Current maps, not legacy' ($c.Name -eq 'Current' -and -not $c.Legacy) "$($c | Out-String)"
+    Assert-That 'Sprint maps to Current as legacy' ($s.Name -eq 'Current' -and $s.Legacy) "$($s | Out-String)"
+    Assert-That 'Active maps to Current as legacy' ($a.Name -eq 'Current' -and $a.Legacy) "$($a | Out-String)"
+    $true
+}
+
 Run-Test 'file model: LF, no frontmatter gives null scope' {
-    New-TestFile 'Tasks.md' "# T`n`n## Sprint`n- [ ] a`n"
+    New-TestFile 'Tasks.md' "# T`n`n## Current`n- [ ] a`n"
     $m = Get-TaskFile -Path (Join-Path $testRoot 'Tasks.md') -VaultRoot $testRoot
     $m.LineEnding -eq "`n" -and $null -eq $m.Scope -and $m.Tasks.Count -eq 1 -and $m.Problems.Count -eq 0 -and $m.Tasks[0].File -eq 'Tasks.md'
 }
@@ -275,7 +285,7 @@ Run-Test 'Get-TaskFiles scans the whole root with exclusions and -Path' {
     foreach ($rel in 'Tasks.md', 'Areas/A/Tasks.md', 'Projects/P/Sub/Tasks.md', 'Other/Deep/Tasks.md',
                      'Archive/Old/Tasks.md', 'Projects/P/Archive/Tasks.md', 'node_modules/x/Tasks.md',
                      '.claude/Tasks.md', '.obsidian/Tasks.md', 'bin/Tasks.md', 'Custom/Tasks.md', 'Areas/A/NotTasks.md') {
-        New-TestFile $rel "## Sprint`n"
+        New-TestFile $rel "## Current`n"
     }
     $rel = { param($list) (@(foreach ($x in $list) { if ($x) { $x.Substring($testRoot.Length + 1) -replace "\\", "/" } })) -join "," }
     $all = & $rel (Get-TaskFiles -VaultRoot $testRoot)
@@ -296,19 +306,19 @@ Run-Test 'Get-TaskFiles scans the whole root with exclusions and -Path' {
 }
 
 Run-Test 'Get-NextTaskId returns 1 with no IDs' {
-    New-TestFile 'Areas/A/Tasks.md' "## Sprint`n- [ ] a`n"
+    New-TestFile 'Areas/A/Tasks.md' "## Current`n- [ ] a`n"
     (Get-NextTaskId -VaultRoot $testRoot) -eq 1
 }
 
 Run-Test 'Get-NextTaskId: max across two files plus a Task-40 doc is 41' {
-    New-TestFile 'Areas/A/Tasks.md' "## Sprint`n- [ ] a | 🆔 12`n- [ ] b | 🆔 x9`n"
+    New-TestFile 'Areas/A/Tasks.md' "## Current`n- [ ] a | 🆔 12`n- [ ] b | 🆔 x9`n"
     New-TestFile 'Projects/P/Tasks.md' "## Backlog`n- [ ] c | 🆔 33`n  - [ ] nested | 🆔 99`n## Notes`n- [ ] d | 🆔 98`n"
     New-TestFile 'Projects/P/Inbox/Task-40-Something.md' "# Something`n"
     (Get-NextTaskId -VaultRoot $testRoot) -eq 41
 }
 
 Run-Test 'Get-NextTaskId counts archived task docs and archived Tasks.md' {
-    New-TestFile 'Areas/A/Tasks.md' "## Sprint`n- [ ] a | 🆔 2`n"
+    New-TestFile 'Areas/A/Tasks.md' "## Current`n- [ ] a | 🆔 2`n"
     New-TestFile 'Areas/A/Archive/Task-50-Old.md' "# Old`n"
     New-TestFile 'Archive/Proj/Tasks.md' "## Done`n- [x] z | 🆔 60`n"
     New-TestFile 'node_modules/Task-900-Junk.md' ''

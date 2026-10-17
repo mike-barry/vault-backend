@@ -1,7 +1,7 @@
 # Task-line lint: reports problems in Tasks.md files by wrapping the vault-tasks script's
 # `check` verb, so the lint sweep and the task skill share one definition of a problem.
 # Report-only; the fixes belong to the task verbs (`backfill` for missing IDs and created
-# dates, a heading rename for a legacy `Active` section, and so on - see the skill).
+# dates, a heading rename for a legacy `Active` or `Sprint` section, and so on - see the skill).
 #
 # Codes, from tasks.ps1 -Action check: UnknownSection, LegacyHeading, EmptyTitle,
 # CheckboxInReminders, MissingId, MissingCreated, DuplicateId, MissingDoc, OrphanDoc,

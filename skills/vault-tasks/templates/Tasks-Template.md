@@ -7,7 +7,7 @@ agent.instructions:
 
 ## 🔔 Reminders
 
-## 🔥 Sprint
+## 🔥 Current
 
 ## 🧱 Blocked
 

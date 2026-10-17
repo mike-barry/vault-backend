@@ -9,7 +9,8 @@
 # for -Children and -AddChild - so 'pwsh -File tasks.ps1 -Tags a,b' works as well):
 #   .\tasks.ps1 -Action list     [-Path <file|folder>] [-Section <name[]>] [-Status <name[]>] [-Tag <tag[]>] [-Id <int[]>]
 #   .\tasks.ps1 -Action check    [-Path <file|folder>]
-#   .\tasks.ps1 -Action add      -Path <Tasks.md|folder> -Title <text> [-Section <name>] [-Status <name>] [-Text <text>]
+#   .\tasks.ps1 -Action groups   [-Path <file|folder>]
+#   .\tasks.ps1 -Action add     -Path <Tasks.md|folder> -Title <text> [-Section <name>] [-Status <name>] [-Text <text>]
 #                                [-Tags <tag[]>] [-Priority <name>] [-Start|-Scheduled|-Due <date>] [-Children <text[]>]
 #   .\tasks.ps1 -Action update   -Id <int> [-Title] [-Text] [-AddTag <tag[]>] [-RemoveTag <tag[]>] [-Priority]
 #                                [-Start|-Scheduled|-Due <date|none>] [-Status] [-Section] [-AddChild <text[]>]
@@ -24,17 +25,22 @@
 #   check     { File, LineNumber, Code, Message } problems; exit 0 whether or not any exist.
 #             Status is independent of queue ([/] is valid in any non-Done section); the one
 #             constraint is that [x] and [-] live only in Done (code DoneOutsideDone)
+#   groups    { Group, Open, Closed, Files, Views } per group/<name> tag, sorted by Group.
+#             Open counts todo + in-progress, Closed done + cancelled; Files are the
+#             Tasks.md files holding a tagged task. -Path scopes the counted files only:
+#             Views is always repo-wide - every View-*.md outside excluded and Archive
+#             folders whose text has #group/<Group> (not followed by a tag character)
 #   add       stamps the next ID and created=today; inserts at the top of the section
 #   update    rewrites the task's line; -Section moves the line and its children
 #   (update, promote, done, and cancel also stamp a missing ID and created date on the line
-#   they rewrite; list, check, and prune never change a line)
+#   they rewrite; list, check, groups, and prune never change a line)
 #   promote   creates Task-<Id>-<Title>.md from templates/Task-Template.md (H1 in Title Case,
 #             intro capitalized); the line becomes the link
 #   done      [x] + done date, fields/tags/text dropped, block moved to the top of Done
 #   cancel    [-] + cancelled date, otherwise as done
 #   prune     Done items older than -Days (default 7); preview unless -Apply
 #   backfill  stamps a missing ID and created date on every task line
-#   Sections: Sprint, Blocked, Backlog, SideQuests (or 'Side Quests'), Done, Reminders.
+#   Sections: Current, Blocked, Backlog, SideQuests (or 'Side Quests'), Done, Reminders.
 #   Statuses: todo, in-progress, done, cancelled. Priorities: highest, high, medium, low,
 #   lowest, none. Dates: yyyy-MM-dd, or 'none' to clear; "today" is local time.
 #
@@ -51,8 +57,10 @@
 
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('list', 'check', 'add', 'update', 'promote', 'done', 'cancel', 'prune', 'backfill')]
+    [ValidateSet('list', 'check', 'groups', 'add', 'update', 'promote', 'done', 'cancel', 'prune', 'backfill')]
     [string]$Action,
+    # Scope for list, check, groups, prune, backfill (a Tasks.md or a folder); the target
+    # Tasks.md or folder for add.
     [string]$Path,
     # Array parameters also take one delimited string, so they work under 'pwsh -File':
     # -Section, -Status, -Tag, -Id, -Tags, -AddTag, -RemoveTag split on commas (pieces
@@ -126,14 +134,14 @@ $TaskLink = '^Task-\d+(?:-|$)'   # a promoted line's link names a task doc only 
 
 function Get-SectionKey([string]$Name) {
     switch (($Name -replace '[\s_-]', '').ToLowerInvariant()) {
-        'sprint'     { return 'Sprint' }
+        'current'    { return 'Current' }
         'blocked'    { return 'Blocked' }
         'backlog'    { return 'Backlog' }
         'sidequests' { return 'SideQuests' }
         'done'       { return 'Done' }
         'reminders'  { return 'Reminders' }
     }
-    Fail "Unknown section '$Name'. Use one of: Sprint, Blocked, Backlog, SideQuests, Done, Reminders"
+    Fail "Unknown section '$Name'. Use one of: Current, Blocked, Backlog, SideQuests, Done, Reminders"
 }
 
 function Get-StatusKey([string]$Name) {
@@ -446,7 +454,7 @@ function Invoke-Check {
         foreach ($p in $m.Problems) {
             $code = switch -Regex ($p.Message) {
                 '^Unknown section'          { 'UnknownSection' }
-                'legacy name Active'        { 'LegacyHeading' }
+                'uses the legacy name'      { 'LegacyHeading' }
                 'empty title'               { 'EmptyTitle' }
                 'in the Reminders section'  { 'CheckboxInReminders' }
                 default                     { 'Unparsed' }
@@ -492,6 +500,51 @@ function Invoke-Check {
     Write-Json @($out.ToArray())
 }
 
+# Grouping tags (group/<name>) in the -Path scope, with the repo's View-*.md files naming
+# each one. Tag and view matching ignore case; a group keeps the first spelling seen.
+function Invoke-Groups {
+    $cmp = [System.StringComparer]::OrdinalIgnoreCase
+    $groups = [System.Collections.Generic.Dictionary[string, object]]::new($cmp)
+    foreach ($f in Get-ScopeFiles $Path) {
+        foreach ($t in (Get-Model $f).Tasks) {
+            $seen = [System.Collections.Generic.HashSet[string]]::new($cmp)
+            foreach ($tag in $t.Tags) {
+                if ($tag -notmatch '^group/(.+)$') { continue }
+                $name = $Matches[1]
+                if (-not $seen.Add($name)) { continue }   # a tag repeated on one line counts once
+                if (-not $groups.ContainsKey($name)) {
+                    $groups[$name] = [PSCustomObject]@{ Name = $name; Open = 0; Closed = 0; Files = [System.Collections.Generic.HashSet[string]]::new($cmp) }
+                }
+                $g = $groups[$name]
+                if ($t.Status -in 'todo', 'in-progress') { $g.Open++ }
+                elseif ($t.Status -in 'done', 'cancelled') { $g.Closed++ }
+                [void]$g.Files.Add($t.File)
+            }
+        }
+    }
+    if ($groups.Count -eq 0) { Write-Json @(); return }
+
+    # View files repo-wide (never scoped by -Path), read once.
+    $views = foreach ($v in Get-PrunedFiles -Root $VaultRoot -Filter 'View-*.md' -ExcludeFolderNames $TaskScanExcludedFolders) {
+        $leaf = [System.IO.Path]::GetFileName($v)
+        if ($leaf -notlike 'View-*.md') { continue }
+        [PSCustomObject]@{ Rel = (_Get-RelPath $VaultRoot $v); Text = [System.IO.File]::ReadAllText($v, $Utf8NoBom) }
+    }
+
+    $names = [string[]]@($groups.Keys)
+    [Array]::Sort($names, $cmp)
+    $out = foreach ($n in $names) {
+        $g = $groups[$n]
+        $re = [regex]::new('#group/' + [regex]::Escape($g.Name) + '(?![\w/-])', 'IgnoreCase')
+        $files = [string[]]@($g.Files)
+        [Array]::Sort($files, $cmp)
+        $hits = [string[]]@(foreach ($v in @($views)) { if ($re.IsMatch($v.Text)) { $v.Rel } })
+        [Array]::Sort($hits, $cmp)
+        [PSCustomObject][ordered]@{ Group = $g.Name; Open = $g.Open; Closed = $g.Closed; Files = $files; Views = $hits }
+    }
+    Write-Json @($out)
+}
+
 function Invoke-Add {
     if (-not $Path) { Fail '-Action add requires -Path' }
     if (-not $Title -or -not $Title.Trim()) { Fail '-Action add requires -Title' }
@@ -502,7 +555,7 @@ function Invoke-Add {
         if (-not (Test-Path -LiteralPath $abs -PathType Leaf)) { Fail "Tasks.md not found: $abs" }
     }
     $sec = if ($Section) { if (@($Section).Count -ne 1) { Fail '-Action add takes one -Section' }; Get-SectionKey $Section[0] } else { 'Backlog' }
-    if ($sec -eq 'Done') { Fail 'Use -Action done or -Action cancel to put a task in Done; add takes Sprint, Blocked, Backlog, SideQuests, or Reminders' }
+    if ($sec -eq 'Done') { Fail 'Use -Action done or -Action cancel to put a task in Done; add takes Current, Blocked, Backlog, SideQuests, or Reminders' }
 
     $m = Get-Model $abs
     $h = Find-SectionIndex $m.Lines $sec
@@ -748,6 +801,7 @@ try {
     switch ($Action) {
         'list'     { Invoke-List }
         'check'    { Invoke-Check }
+        'groups'   { Invoke-Groups }
         'add'      { Invoke-Add }
         'update'   { Invoke-Update }
         'promote'  { Invoke-Promote }

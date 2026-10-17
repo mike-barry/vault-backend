@@ -66,6 +66,13 @@ switch ($Action) {
             Write-Host 'UnmergedFiles:'
             $merge.UnmergedFiles | ForEach-Object { Write-Host "  $_" }
         }
+        # Warning only: never changes the exit code and never sets the config.
+        $hooks = Test-GitHooksPath -RepoPath $repoPath
+        Write-KV 'HooksPath' ($hooks.HooksPath ?? '(unset)')
+        Write-KV 'HooksOk' $hooks.HooksOk
+        if ($hooks.HooksOk -eq 'False') {
+            Write-Host "Warning: git hooks are not registered in '$Path', so commit hooks will not run. Fix (run in that repo): git config core.hooksPath .githooks"
+        }
         exit 0
     }
 

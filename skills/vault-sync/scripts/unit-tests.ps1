@@ -202,6 +202,53 @@ Run-Test 'Status reports uncommitted change' {
 
 Add-CommitAll $statusRepo 'settle'
 
+Write-Host "`n-- Action: Status (hooks registration) --"
+
+$hooksRepo = Join-Path $base 'hooks-repo'
+New-GitRepo -RepoPath $hooksRepo
+Write-RepoFile $hooksRepo 'File.md' "one`n"
+Add-CommitAll $hooksRepo 'first'
+
+Run-Test 'No .githooks dir, hooksPath unset: NotApplicable, no warning' {
+    $r = Invoke-Sync @('-Action', 'Status', '-VaultRootOverride', $base, '-Path', 'hooks-repo')
+    ($r.ExitCode -eq 0) -and (Assert-OutputContains $r.Output 'HooksPath: (unset)') -and
+    (Assert-OutputContains $r.Output 'HooksOk: NotApplicable') -and ($r.Output -notmatch 'Warning:')
+}
+
+Run-Test 'Helper reports NotApplicable without a .githooks dir' {
+    (Test-GitHooksPath -RepoPath $hooksRepo).HooksOk -eq 'NotApplicable'
+}
+
+Write-RepoFile $hooksRepo '.githooks/pre-commit' "#!/bin/sh`n"
+
+Run-Test '.githooks dir, hooksPath unset: HooksOk False, warning names fix, exit 0, config untouched' {
+    $r = Invoke-Sync @('-Action', 'Status', '-VaultRootOverride', $base, '-Path', 'hooks-repo')
+    $after = (git -C $hooksRepo config --get core.hooksPath 2>$null)
+    ($r.ExitCode -eq 0) -and (Assert-OutputContains $r.Output 'HooksPath: (unset)') -and
+    (Assert-OutputContains $r.Output 'HooksOk: False') -and
+    (Assert-OutputContains $r.Output 'git config core.hooksPath .githooks') -and (-not $after)
+}
+
+Run-Test '.githooks dir, hooksPath set to .githooks: HooksOk True, no warning' {
+    git -C $hooksRepo config core.hooksPath .githooks 2>&1 | Out-Null
+    $r = Invoke-Sync @('-Action', 'Status', '-VaultRootOverride', $base, '-Path', 'hooks-repo')
+    ($r.ExitCode -eq 0) -and (Assert-OutputContains $r.Output 'HooksPath: .githooks') -and
+    (Assert-OutputContains $r.Output 'HooksOk: True') -and ($r.Output -notmatch 'Warning:')
+}
+
+Run-Test '.githooks dir, hooksPath pointing elsewhere: HooksOk False with warning' {
+    git -C $hooksRepo config core.hooksPath .git/hooks 2>&1 | Out-Null
+    $r = Invoke-Sync @('-Action', 'Status', '-VaultRootOverride', $base, '-Path', 'hooks-repo')
+    ($r.ExitCode -eq 0) -and (Assert-OutputContains $r.Output 'HooksOk: False') -and
+    (Assert-OutputContains $r.Output 'Warning:')
+}
+
+Run-Test 'No .githooks dir, hooksPath set: still NotApplicable' {
+    Remove-Item -LiteralPath (Join-Path $hooksRepo '.githooks') -Recurse -Force
+    $r = Invoke-Sync @('-Action', 'Status', '-VaultRootOverride', $base, '-Path', 'hooks-repo')
+    ($r.ExitCode -eq 0) -and (Assert-OutputContains $r.Output 'HooksOk: NotApplicable') -and ($r.Output -notmatch 'Warning:')
+}
+
 Write-Host "`n-- Action: Reattach --"
 
 $firstShaStatus = (git -C $statusRepo rev-parse HEAD).Trim()

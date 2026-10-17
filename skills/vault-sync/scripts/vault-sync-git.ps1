@@ -99,3 +99,31 @@ function New-ConflictFilePath {
     if ($dir) { return (Join-Path $dir $newName) -replace '\\', '/' }
     return $newName
 }
+
+# Reports whether $RepoPath's commit hooks are registered. Read-only: never sets config.
+# Applicable only when the repo's top level has a .githooks directory (the vault root);
+# a repo without one (e.g. the .claude submodule) reports NotApplicable. Otherwise OK
+# means core.hooksPath is set and resolves, relative to the top level, to that directory.
+# Returns @{ HooksPath; HooksOk } where HooksPath is $null when unset and HooksOk is
+# 'True', 'False', or 'NotApplicable'.
+function Test-GitHooksPath {
+    param(
+        [Parameter(Mandatory)][string]$RepoPath
+    )
+    $hooksPath = (git -C $RepoPath config --get core.hooksPath 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $hooksPath) { $hooksPath = $null }
+    $topLevel = (git -C $RepoPath rev-parse --show-toplevel 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $topLevel) { $topLevel = $RepoPath }
+    $expected = Join-Path $topLevel '.githooks'
+    if (-not (Test-Path -LiteralPath $expected -PathType Container)) {
+        return @{ HooksPath = $hooksPath; HooksOk = 'NotApplicable' }
+    }
+    if (-not $hooksPath) {
+        return @{ HooksPath = $null; HooksOk = 'False' }
+    }
+    $resolved = if ([System.IO.Path]::IsPathRooted($hooksPath)) { $hooksPath } else { Join-Path $topLevel $hooksPath }
+    $norm = { param($p) [System.IO.Path]::GetFullPath($p).Replace('\', '/').TrimEnd('/') }
+    $ok = (Test-Path -LiteralPath $resolved -PathType Container) -and
+          ((& $norm $resolved) -eq (& $norm $expected))
+    return @{ HooksPath = $hooksPath; HooksOk = $(if ($ok) { 'True' } else { 'False' }) }
+}

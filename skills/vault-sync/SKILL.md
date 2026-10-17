@@ -19,7 +19,7 @@ Every step below calls `.claude/skills/vault-sync/scripts/vault-sync.ps1 -Action
 Then run steps 1-4 against `.claude/` exactly as below, before the vault root — its moved submodule pointer then shows up in step 1 as an ordinary change to commit.
 
 ### 1. Local state
-`-Action Status -Path .`. Uncommitted files → `-Action Stage`, then commit (see "Commit messages"). Nothing to commit → step 2.
+`-Action Status -Path .`. `HooksOk: False` prints a `Warning:` line naming the fix: relay it to the user verbatim and carry on; don't run the fix yourself, and treat `NotApplicable` (no `.githooks/`, e.g. the submodule) as fine. Uncommitted files → `-Action Stage`, then commit (see "Commit messages"). Nothing to commit → step 2.
 
 ### 2. Pull
 `-Action Pull -Path .`, check `PullStatus`:

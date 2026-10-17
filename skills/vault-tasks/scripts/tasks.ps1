@@ -676,7 +676,10 @@ function Invoke-Finish([string]$Kind) {
 
     $f = Copy-TaskFields $t
     Add-MissingStamps $f
-    $f.Text = ''; $f.Tags = @(); $f.Priority = $null; $f.Start = $null; $f.Scheduled = $null; $f.Due = $null
+    # The done form keeps the title and any wikilinks the text carried (a plan or other doc the
+    # task pointed at stays reachable from the Done trail); everything else on the line goes.
+    $kept = @([regex]::Matches([string]$t.Text, '\[\[[^\]]+\]\]') | ForEach-Object { $_.Value })
+    $f.Text = ($kept -join ' '); $f.Tags = @(); $f.Priority = $null; $f.Start = $null; $f.Scheduled = $null; $f.Due = $null
     if ($Kind -eq 'done') { $f.Symbol = 'x'; $f.DoneDate = $Today; $f.CancelledDate = $null }
     else                  { $f.Symbol = '-'; $f.CancelledDate = $Today; $f.DoneDate = $null }
 

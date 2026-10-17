@@ -126,7 +126,7 @@ Most violations are report-only — show them to the user. The check also surfac
 
 ## 7. Provenance Frontmatter
 
-Check that files under any `Archive/` folder carry both `doc.created:` and `doc.archived:` frontmatter (Check 1, auto-repairable) and carry no stale `use_skill:` `agent.instructions` entries (Check 4, auto-repairable), and that all vault content files carry `doc.created:` (Check 2, report-only) and `doc.type:` (Check 3, report-only). See [[Document-Conventions]] for the canonical `doc.*` schema. Missing dates are recovered from existing frontmatter, a filename date segment, or git history where possible (via the shared `Get-CreatedDate`/ `Get-ArchivedDate` helpers, also used by `vault-doc-archive`); anything unresolved is flagged for manual repair rather than guessed. `doc.type` has no recovery chain — Check 3 only reports, never guesses. A `use_skill:` entry routes live edits through its owning skill; an archived doc is frozen and never rewritten, so a surviving entry is stale drift — `vault-doc-archive` already strips these at archive time, so Check 4 mainly catches docs archived before that behavior existed or by a path that bypassed the skill. Folder notes and `Tasks.md`/top-level `Tasks/` dashboard files are excluded from all four checks; Guide docs (`.claude/guides/*`) are additionally excluded from Check 3 only, since `doc.type` isn't part of their schema.
+Check that files under any `Archive/` folder carry both `doc.created:` and `doc.archived:` frontmatter (Check 1, auto-repairable) and carry no stale `use_skill:` `agent.instructions` entries (Check 4, auto-repairable), and that all vault content files carry `doc.created:` (Check 2, report-only) and `doc.type:` (Check 3, report-only). See [[Document-Conventions]] for the canonical `doc.*` schema. Missing dates are recovered from existing frontmatter, a filename date segment, or git history where possible (via the shared `Get-CreatedDate`/ `Get-ArchivedDate` helpers, also used by `vault-doc-archive`); anything unresolved is flagged for manual repair rather than guessed. `doc.type` has no recovery chain — Check 3 only reports, never guesses. A `use_skill:` entry routes live edits through its owning skill; an archived doc is frozen and never rewritten, so a surviving entry is stale drift — `vault-doc-archive` already strips these at archive time, so Check 4 mainly catches docs archived before that behavior existed or by a path that bypassed the skill. Folder notes and `Tasks.md` are excluded from all four checks; Guide docs (`.claude/guides/*`) are additionally excluded from Check 3 only, since `doc.type` isn't part of their schema.
 
 Preview (all four checks):
 
@@ -163,7 +163,7 @@ Check every `Tasks.md` for lines the task system cannot use: unknown or legacy (
 pwsh .claude/skills/vault-lint/scripts/check-task-lines.ps1
 ```
 
-Show the output grouped by code. Remedies belong to `vault-tasks`: `MissingId` and `MissingCreated` are fixed by its `backfill` verb, `LegacyHeading` by renaming the heading to `Current`, and the rest by hand through the skill. See [[Task-System]].
+Show the output grouped by code. Remedies belong to `vault-tasks`: `MissingId` and `MissingCreated` are fixed by its `backfill` verb, `LegacyHeading` by renaming the heading to `Current`; for the rest, report and ask, per `vault-tasks`. See [[Task-System]].
 
 ---
 ## Testing

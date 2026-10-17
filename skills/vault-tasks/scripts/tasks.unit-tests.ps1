@@ -566,6 +566,17 @@ Run-Test 'done: moves block to top of Done, drops fields/tags/text, keeps childr
     Ok
 }
 
+Run-Test 'done: keeps wikilinks from the text and drops the rest of it' {
+    Set-Fixtures
+    $r = Invoke-Tasks 'update' @{ Id = 1; Text = 'context for alpha - See [[Plan-X]] and [[Other-Doc|alias]]' }
+    Expect ($r.Code -eq 0) $r.Err
+    $r = Invoke-Tasks 'done' @{ Id = 1 }
+    Expect ($r.Code -eq 0) $r.Err
+    Expect ($r.Json.Text -eq '[[Plan-X]] [[Other-Doc|alias]]') $r.Out
+    Expect ($r.Json.Raw -eq "- [x] **Alpha** - [[Plan-X]] [[Other-Doc|alias]] | 🆔 1 ➕ 2026-01-01 ✅ $today") $r.Json.Raw
+    Ok
+}
+
 Run-Test 'cancel: symbol and cancelled date; compact Done at end of file' {
     Set-Fixtures
     $r = Invoke-Tasks 'cancel' @{ Id = 11 }

@@ -205,8 +205,7 @@ try {
     # This check's recovery chains are git-history-dependent (Get-CreatedDate /
     # Get-ArchivedDate call `git log --follow`), so fixtures need real, dated commits
     # rather than the plain untracked files the other checks use. It also runs in
-    # full-vault-scan mode (no -PathOverride), so the top-level Tasks/ exclusion needs a
-    # real vault root to exercise. A fresh, isolated repo - not the shared worktree above -
+    # full-vault-scan mode (no -PathOverride) against a real root. A fresh, isolated repo - not the shared worktree above -
     # keeps this history and scan mode independent of the vault's own commit log.
     $provRoot = Join-Path ([System.IO.Path]::GetTempPath()) "vault-provenance-test-$(Get-Random)"
     New-Item -ItemType Directory -Path $provRoot | Out-Null
@@ -307,9 +306,8 @@ try {
         # J - Tasks.md: excluded by filename from both checks.
         New-ProvFile 'Tasks.md' "# Tasks`n"
 
-        # K - top-level Tasks/ folder: excluded by path (only exercisable in full-scan
-        # mode, since this check runs with no -PathOverride against $provRoot itself).
-        New-ProvFile 'Tasks/Active.md' "# Active`n"
+        # K - top-level Tasks/ holds task views, which are content docs and are checked.
+        New-ProvFile 'Tasks/View-Open.md' "# View Open`n"
 
         # L - vault-wide Check 3 candidate: missing doc.type, not a Guide doc.
         New-ProvFile 'Resources/No-Type-Doc.md' "# No Type Doc`n"
@@ -352,7 +350,7 @@ try {
             ($out.Contains("Missing 'doc.created:': Resources${s}Regular-Doc.md")) $out
         Assert-That 'I: folder note excluded entirely'              (-not $out.Contains('SubDir')) $out
         Assert-That 'J: Tasks.md excluded entirely'                 (-not $out.Contains('Tasks.md')) $out
-        Assert-That 'K: top-level Tasks/ folder excluded entirely'  (-not $out.Contains("Tasks${s}Active.md")) $out
+        Assert-That 'K: top-level Tasks/ task views are checked'     ($out.Contains("Missing 'doc.created:': Tasks${s}View-Open.md")) $out
         Assert-That 'Check 1 repairs are not double-reported by Check 2' `
             (-not $out.Contains("Missing 'doc.created:': Archive${s}Note-2020-03-05.md") -and
              -not $out.Contains("Missing 'doc.created:': Projects${s}Sample${s}Archive${s}Plain-Note.md")) $out

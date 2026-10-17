@@ -29,7 +29,7 @@ pwsh -NonInteractive -NoProfile -File .claude/skills/vault-tasks/scripts/tasks.p
 ```
 
 - **Arrays** are passed as one delimited string: `-Tags`, `-Tag`, `-AddTag`, `-RemoveTag`, `-Section`, `-Status`, `-Id` are comma-separated (`-Tags "group/weekend-2026-10-17,errand"`); `-Children` and `-AddChild` are newline-separated (in Bash, `-Children $'First\nSecond'`). Tags may be given with or without `#`.
-- **Values** are case-insensitive. Sections: `Current`, `Blocked`, `Backlog`, `SideQuests`, `Done`, `Reminders`. Statuses: `todo`, `in-progress`. Priorities: `highest`, `high`, `medium`, `low`, `lowest`, `none`. Dates are `yyyy-MM-dd`, or `none` to clear.
+- **Values** are case-insensitive. Sections: `Current`, `Blocked`, `Backlog`, `SideQuests`, `Done`, `Reminders`. Statuses: `todo`, `in-progress` (`list` also takes `done`, `cancelled`). Priorities: `highest`, `high`, `medium`, `low`, `lowest`, `none`. Dates are `yyyy-MM-dd`, or `none` to clear.
 - **Output** is one JSON document on stdout. Summarize it for the user; never paste raw JSON.
 - **Errors** exit 1 with the explanation on stderr. Relay it verbatim and stop; never fall back to editing the file by hand.
 - **Address tasks by ID**, found with `list` when the user names a task by its words.
@@ -69,7 +69,7 @@ Default scope is the whole repo. Lines with a null `Id` are hand-written and not
 - **Start**: `-Status in-progress`, plus `-Section Current` if it is not already there.
 - **Block**: `-Section Blocked -Text "<what it waits on>"`. `-Text` replaces the whole text, so carry over any context worth keeping.
 - **Move**: `-Section Current|Backlog|SideQuests|Blocked` moves the line and its sub-bullets to the top of that section in the same file; status is unchanged.
-- **Move to another file**: no verb does this. Say so and ask before doing anything.
+- **Move to another file**: no verb does this; see [[#Manual Edits]].
 
 ### Done and Cancel
 
@@ -116,7 +116,7 @@ Scope to the file in context, or the repo if the user asks for all; ask if neith
 -Action check [-Path <file|folder>]
 ```
 
-Report problems grouped by code. Fixes: `LegacyHeading` - rename an `Active` or `Sprint` heading to `Current` (keep its emoji prefix); `MissingId` or `MissingCreated` - run backfill. For the rest (`UnknownSection`, `EmptyTitle`, `CheckboxInReminders`, `DuplicateId`, `MissingDoc`, `OrphanDoc`, `DoneOutsideDone`), report and ask how to resolve.
+Report problems grouped by code. Fixes: `LegacyHeading` - rename the `Active` or `Sprint` heading to `Current` by hand, keeping its emoji prefix; `MissingId` or `MissingCreated` - run backfill. Any other code: report it and ask.
 
 ### Backfill
 
@@ -132,12 +132,12 @@ When the user asks to plan a task out, hand off to `vault-docs` (plan flow); an 
 
 ## Manual Edits
 
-The user edits `Tasks.md` by hand in Obsidian. Lines without an ID are normal and get one on the next verb that touches them, a `backfill`, or a commit. Never regenerate a file, and never edit a task line by hand when a verb exists; if no verb can express the change, say so and ask.
+The user edits `Tasks.md` by hand in Obsidian; lines without an ID are normal. The agent never regenerates a file and never edits a task line directly when a verb exists. The one sanctioned direct edit is renaming a legacy section heading. For anything else no verb can express, such as moving a task to another file, say so and ask.
 
 ## Init
 
-Creates a missing `Tasks.md` for one project or area. Load `init.md` (same skill directory) for the steps.
+Creates a missing `Tasks.md` for one project or area folder. Errors if the file already exists; output is plain text, not JSON.
 
-## Portability
-
-The script assumes only `Tasks.md` files with the canonical section headings and an optional `Inbox/` sibling for task docs. The routing index and the archive handoff after `done` are this vault's conventions and live here, not in the script.
+```
+pwsh -NonInteractive -NoProfile -File .claude/skills/vault-tasks/scripts/init-tasks.ps1 -Path "<folder>"
+```

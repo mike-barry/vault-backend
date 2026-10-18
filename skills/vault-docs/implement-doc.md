@@ -1,6 +1,6 @@
 # Implement Doc Flow
 
-Owns the **implement doc** artifact: a disposable working file that isolates implementation churn from a finalized planning doc while work is in flight. It is not a new archived doc type — it has no independent permanence and is deleted (not archived) once collapsed back into the plan. It carries one frontmatter entry, the same skill-owned-file routing directive as every other `vault-docs` artifact, injected via `scripts/add-skill-directive.ps1 -DocPath <path> -When 'editing this file or acting on its checklist'` — the broadened `when:` shared with planning docs (see [[plan#Planning Doc Shape]]).
+Owns the **implement doc** artifact: a disposable working file that isolates implementation churn from a finalized planning doc while work is in flight. It is not a new archived doc type — it has no independent permanence and is deleted (not archived) once collapsed back into the plan. Its frontmatter is `doc.created` + `doc.type: Plan` (schema per [[Document-Conventions]], so the vault-wide provenance lint checks pass) plus the same skill-owned-file routing directive as every other `vault-docs` artifact, injected via `scripts/add-skill-directive.ps1 -DocPath <path> -When 'editing this file or acting on its checklist'` — the broadened `when:` shared with planning docs (see [[plan#Planning Doc Shape]]).
 `plan.md`'s [[plan#Start Implementation]] sub-flow hands off here once the user approves this flow at the decision gate — the plan's implementation is likely to touch it often enough that isolating the churn in a second file earns its overhead.
 
 This flow has three sub-flows: **scaffold** the implement doc, **execute** steps interactively, and **collapse** it back into the plan at the end.
@@ -21,7 +21,7 @@ Filename: `Plan-<Description>-Implement.md`, in the same `Inbox/` folder as the 
 
 Triggered immediately once `plan.md`'s Start Implementation approves this flow.
 
-1. **Create the doc** at `Plan-<Description>-Implement.md`, alongside the parent plan, with the `agent.instructions` directive described above. Write the intro back-link, then copy the plan's `## Proposed Implementation Checklist` items into `## Checklist` verbatim as the starting point. Open an empty `## Log`.
+1. **Create the doc** at `Plan-<Description>-Implement.md`, alongside the parent plan, with the frontmatter described above: `doc.created` set to today, `doc.type: Plan`, and the `agent.instructions` directive. Write the intro back-link, then copy the plan's `## Proposed Implementation Checklist` items into `## Checklist` verbatim as the starting point. Open an empty `## Log`.
 2. **Add the plan's forward link.** Edit the parent plan's intro paragraph to add a forward link to the new implement doc, alongside any existing back-link to an originating idea or task.
 3. **This is the last edit the plan doc receives** until collapse. From here, every deviation, discovery, or decision goes in the implement doc's `## Log`, never back into the plan — see [[#Execute Steps]].
 4. **Stop and report.** Once the doc is created and linked, report back — e.g. "Implement doc created at `Plan-<Description>-Implement.md` — ready to proceed?" — and wait. Do not begin Execute Steps until the user explicitly confirms.

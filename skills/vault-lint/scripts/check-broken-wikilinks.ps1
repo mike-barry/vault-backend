@@ -107,15 +107,23 @@ Get-LintMarkdownFiles -PathOverride $PathOverride -VaultRootOverride $vaultRoot 
 
     foreach ($m in [regex]::Matches($scanContent, $linkPattern)) {
         $raw    = $m.Groups[1].Value.Trim()
+        # Inside a markdown table the alias pipe must be escaped as `\|`, so the captured
+        # target carries a trailing backslash ([[Note\|alias]] -> 'Note\'). Drop it before the
+        # path split below, which would otherwise leave an empty target.
+        $raw    = $raw.TrimEnd('\')
         # Strip path prefix if present (e.g. Folder/Note -> Note)
         $target = ($raw -split '[/\\]')[-1]
 
         if ($currentNotes.ContainsKey($target)) { continue }
         if (Test-IgnoredLink -Target $target -RelPath $relPath) { $ignoredCount++; continue }
 
-        $history = if ($renameMap.ContainsKey($target)) {
-            "was renamed to '$($renameMap[$target])'"
-        } elseif ($deletedSet.ContainsKey($target)) {
+        # A rename is only a usable remedy when the new name still exists. A file moved to
+        # another folder and later deleted leaves a rename entry pointing at its own basename,
+        # so without this check it would be reported as "renamed to itself".
+        $renamedTo = if ($renameMap.ContainsKey($target)) { $renameMap[$target] } else { $null }
+        $history = if ($renamedTo -and $currentNotes.ContainsKey($renamedTo)) {
+            "was renamed to '$renamedTo'"
+        } elseif ($deletedSet.ContainsKey($target) -or ($renamedTo -and $deletedSet.ContainsKey($renamedTo))) {
             "was deleted"
         } else {
             "no history found"

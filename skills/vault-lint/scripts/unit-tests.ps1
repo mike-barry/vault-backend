@@ -116,6 +116,42 @@ try {
     Assert-That 'scoped ignore keeps link visible in other path'  ($out -match 'Broken: \[\[Scoped-Target\]\]' -and $out -match 'Note-B') $out
     Assert-That 'scoped ignore reports ignored count'             ($out -match '1 ignored via known-broken list') $out
 
+    # Table-escaped alias pipes ([[Note\|alias]]) must resolve to Note, not to an empty target.
+    Reset-TestFolder
+    New-TestFile 'Pi-Hole.md' 'I exist.'
+    New-TestFile 'Table.md'   "| Host | Role |`n|------|------|`n| [[Pi-Hole\|pihole]] | DNS |`n| [[Gone-Note\|gone]] | none |`n"
+    $out = Invoke-Lint 'check-broken-wikilinks.ps1'
+    Assert-That 'table-escaped alias resolves existing target' ($out -notmatch 'Pi-Hole' -and $out -notmatch 'Broken: \[\[\]\]') $out
+    Assert-That 'table-escaped alias still reports a missing target' ($out -match 'Broken: \[\[Gone-Note\]\]') $out
+
+    # Git history annotations need real commits, so these run in a fresh isolated repo rather
+    # than the shared worktree. A file moved to another folder and then deleted must be
+    # reported as deleted, not as "renamed to" its own basename; a true rename still is.
+    $histRoot = Join-Path ([System.IO.Path]::GetTempPath()) "vault-wikilink-history-test-$(Get-Random)"
+    New-Item -ItemType Directory -Path (Join-Path $histRoot 'Notes') -Force | Out-Null
+    git -C $histRoot init -q 2>&1 | Out-Null
+    git -C $histRoot config user.email test@test.com 2>&1 | Out-Null
+    git -C $histRoot config user.name Test 2>&1 | Out-Null
+    try {
+        [System.IO.File]::WriteAllText((Join-Path $histRoot 'Notes/Moved-Then-Deleted.md'), 'doomed', $Utf8NoBom)
+        [System.IO.File]::WriteAllText((Join-Path $histRoot 'Notes/Old-Name.md'), 'renamed later', $Utf8NoBom)
+        git -C $histRoot add -A 2>&1 | Out-Null
+        git -C $histRoot commit -q -m 'add' 2>&1 | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $histRoot 'Notes/Triage') -Force | Out-Null
+        git -C $histRoot mv 'Notes/Moved-Then-Deleted.md' 'Notes/Triage/Moved-Then-Deleted.md' 2>&1 | Out-Null
+        git -C $histRoot mv 'Notes/Old-Name.md' 'Notes/New-Name.md' 2>&1 | Out-Null
+        git -C $histRoot commit -q -m 'move' 2>&1 | Out-Null
+        git -C $histRoot rm -q 'Notes/Triage/Moved-Then-Deleted.md' 2>&1 | Out-Null
+        git -C $histRoot commit -q -m 'delete' 2>&1 | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $histRoot 'Notes/Linker.md'), 'See [[Moved-Then-Deleted]] and [[Old-Name]].', $Utf8NoBom)
+        $out = (& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-broken-wikilinks.ps1') -PathOverride 'Notes' -VaultRootOverride $histRoot 2>&1 | Out-String)
+        Assert-That 'move-then-delete reported as deleted' ($out -match 'Broken: \[\[Moved-Then-Deleted\]\][^\n]*\n\s*-> was deleted') $out
+        Assert-That 'move-then-delete not reported as self-rename' ($out -notmatch "renamed to 'Moved-Then-Deleted'") $out
+        Assert-That 'true rename still reports the new name' ($out -match "Broken: \[\[Old-Name\]\][^\n]*\n\s*-> was renamed to 'New-Name'") $out
+    } finally {
+        Remove-Item -Recurse -Force $histRoot -ErrorAction SilentlyContinue
+    }
+
     # Frontmatter coverage: quoted, path-qualified [[...]] links in frontmatter are scanned
     # like body links (whole-file content match + path-suffix resolution). This is what lets
     # vault-agent-frontmatter's validate script leave wikilink resolution to this check.

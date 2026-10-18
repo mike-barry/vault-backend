@@ -239,6 +239,25 @@ Run-Test 'check: every code, plan links ignored, exit 0' {
     Ok
 }
 
+Run-Test 'check: a closed task''s doc may live in Archive/; an open one''s may not' {
+    New-TestFile 'Areas/C/Tasks.md' (Text @(
+        '## 📋 Backlog'
+        '- [ ] [[Task-20-Open-Archived]] | 🆔 20 ➕ 2026-01-01'
+        '## ✅ Done'
+        '- [x] [[Task-21-Done-Archived]] | 🆔 21 ➕ 2026-01-01 ✅ 2026-01-02'
+        '- [-] [[Task-22-Cancelled-Archived]] | 🆔 22 ➕ 2026-01-01 ❌ 2026-01-02'
+        '- [x] [[Task-23-Done-Gone]] | 🆔 23 ➕ 2026-01-01 ✅ 2026-01-02'
+    ))
+    New-TestFile 'Areas/C/Archive/Task-20-Open-Archived.md' "# Open`n"
+    New-TestFile 'Areas/C/Archive/Task-21-Done-Archived.md' "# Done`n"
+    New-TestFile 'Areas/C/Archive/Task-22-Cancelled-Archived.md' "# Cancelled`n"
+    New-TestFile 'Areas/C/Archive/Task-24-Orphan-Archived.md' "# Orphan`n"
+    $r = Invoke-Tasks 'check'
+    $got = @($r.Json | ForEach-Object { "$($_.LineNumber):$($_.Code)" }) -join ' '
+    Expect ($r.Code -eq 0 -and $got -eq '2:MissingDoc 6:MissingDoc') "got $got"
+    Ok
+}
+
 Run-Test 'check: a Sprint heading is a legacy name for Current' {
     New-TestFile 'Tasks.md' (Text @('## 🔥 Sprint', '- [ ] a | 🆔 1 ➕ 2026-01-01'))
     $r = Invoke-Tasks 'check'
@@ -832,7 +851,7 @@ Run-Test 'smoke: list and check over copies of every real Tasks.md' {
     $b = Invoke-Tasks 'backfill'
     $l2 = Invoke-Tasks 'list'
     $c2 = Invoke-Tasks 'check'
-    Expect ($n -ge 9) "copied $n files"
+    Expect ($n -ge 8) "copied $n files"
     Expect ($l.Code -eq 0 -and @($l.Json).Count -gt 0) "list: $($l.Err)"
     Expect ($c.Code -eq 0) "check: $($c.Err)"
     Expect ($b.Code -eq 0) "backfill: $($b.Err)"

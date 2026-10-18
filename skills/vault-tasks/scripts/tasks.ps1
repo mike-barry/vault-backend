@@ -382,8 +382,13 @@ function Find-Task([int]$TaskId) {
     return $hits[0]
 }
 
-# Every Task-*.md outside excluded folders (Archive included in the exclusion).
-function Get-TaskDocs { return [string[]]@(Get-PrunedFiles -Root $VaultRoot -Filter 'Task-*.md' -ExcludeFolderNames $TaskScanExcludedFolders) }
+# Every Task-*.md outside excluded folders (Archive included in the exclusion unless
+# -IncludeArchive, which walks Archive folders too for closed tasks' archived docs).
+function Get-TaskDocs([switch]$IncludeArchive) {
+    $ex = @($TaskScanExcludedFolders)
+    if ($IncludeArchive) { $ex = @($ex | Where-Object { $_ -ne 'Archive' }) }
+    return [string[]]@(Get-PrunedFiles -Root $VaultRoot -Filter 'Task-*.md' -ExcludeFolderNames $ex)
+}
 
 function Find-TaskDoc([string]$Link) {
     foreach ($d in Get-TaskDocs) {
@@ -442,6 +447,13 @@ function Invoke-Check {
     $docs = Get-TaskDocs
     $docNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($d in $docs) { [void]$docNames.Add([System.IO.Path]::GetFileNameWithoutExtension($d)) }
+    # Closed tasks resolve their doc against a scan that includes Archive folders: marking a
+    # promoted task done hands its doc to vault-doc-archive, which moves it into the context's
+    # Archive/, so an archived doc is the expected home for a done or cancelled line's link,
+    # not a missing one. OrphanDoc keeps using $docs (Archive excluded): an archived doc with
+    # no line is pruned history, not a problem.
+    $closedDocNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($d in Get-TaskDocs -IncludeArchive) { [void]$closedDocNames.Add([System.IO.Path]::GetFileNameWithoutExtension($d)) }
 
     $out = [System.Collections.Generic.List[object]]::new()
     function Add-Problem($File, $Line, [string]$Code, [string]$Message) {
@@ -472,7 +484,9 @@ function Invoke-Check {
                     ForEach-Object { "$($_.File):$($_.LineNumber)" }) -join ', '
                 $items.Add([PSCustomObject]@{ Line = $t.LineNumber; Order = 3; Code = 'DuplicateId'; Message = "ID $($t.Id) is also used at $others" })
             }
-            if ($t.Promoted -and $t.Link -match $TaskLink -and -not $docNames.Contains($t.Link)) {
+            $known = $docNames
+            if ($t.Status -in 'done', 'cancelled') { $known = $closedDocNames }
+            if ($t.Promoted -and $t.Link -match $TaskLink -and -not $known.Contains($t.Link)) {
                 $items.Add([PSCustomObject]@{ Line = $t.LineNumber; Order = 4; Code = 'MissingDoc'; Message = "Linked task doc $($t.Link).md not found" })
             }
         }

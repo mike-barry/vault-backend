@@ -74,11 +74,11 @@ Default scope is the whole repo. Lines with a null `Id` are hand-written and not
 ### Done and Cancel
 
 ```
--Action done -Id <n>
--Action cancel -Id <n>
+-Action done -Id <n> [-Date <date>]
+-Action cancel -Id <n> [-Date <date>]
 ```
 
-Use `cancel` for work deliberately abandoned, not deferred. When the output's `LinkedDoc` is non-null, hand that path to `vault-doc-archive` at its programmatic entry point with type `Task` and today's date. A null `LinkedDoc` (including a line that links a `Plan-` doc) means nothing to archive.
+The date defaults to today; pass `-Date` when the user says the work finished earlier. A future date is refused. Use `cancel` for work deliberately abandoned, not deferred. When the output's `LinkedDoc` is non-null, hand that path to `vault-doc-archive` at its programmatic entry point with type `Task` and today's date. A null `LinkedDoc` (including a line that links a `Plan-` doc) means nothing to archive.
 
 ### Promote
 

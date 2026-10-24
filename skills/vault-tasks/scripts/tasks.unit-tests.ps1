@@ -563,7 +563,7 @@ Run-Test 'update: duplicate ID is an error naming both places' {
 # ===========================================================================
 Write-Host "`n-- done / cancel --"
 
-Run-Test 'done: moves block to top of Done, drops fields/tags/text, keeps children' {
+Run-Test 'done: moves block to top of Done with its text, tags, fields, and children intact' {
     Set-Fixtures
     $r = Invoke-Tasks 'update' @{ Id = 1; AddTag = 't'; Due = '2026-05-01'; Priority = 'high' }
     $r = Invoke-Tasks 'done' @{ Id = 1 }
@@ -573,26 +573,28 @@ Run-Test 'done: moves block to top of Done, drops fields/tags/text, keeps childr
         ''
         '- [/] Beta #group/x | 📅 2026-02-01 🆔 2 ➕ 2026-01-02'
         $A[15..25]
-        "- [x] Alpha | 🆔 1 ➕ 2026-01-01 ✅ $today"
+        "- [x] **Alpha** - first #t | ⏫ 📅 2026-05-01 🆔 1 ➕ 2026-01-01 ✅ $today"
         '    - alpha child'
         ''
         $A[26]
     )
     Expect-File $ARel (Text $exp)
     $j = $r.Json
-    Expect ($j.Status -eq 'done' -and $j.DoneDate -eq $today -and $j.Section -eq 'Done' -and $j.Title -eq 'Alpha' -and $j.Text -eq '' -and $j.Tags.Count -eq 0 -and $null -eq $j.Priority -and $null -eq $j.Due -and $j.Created -eq '2026-01-01' -and $j.Children.Count -eq 1) $r.Out
+    Expect ($j.Status -eq 'done' -and $j.DoneDate -eq $today -and $j.Section -eq 'Done' -and $j.Title -eq 'Alpha' -and $j.Text -eq 'first' -and $j.Tags.Count -eq 1 -and $j.Priority -eq 'high' -and $j.Due -eq '2026-05-01' -and $j.Created -eq '2026-01-01' -and $j.Children.Count -eq 1) $r.Out
     Expect ($j.PSObject.Properties.Name -contains 'LinkedDoc' -and $null -eq $j.LinkedDoc) 'LinkedDoc null'
     Ok
 }
 
-Run-Test 'done: keeps wikilinks from the text and drops the rest of it' {
+Run-Test 'done: keeps text with semicolons and wikilinks verbatim, and the group tag' {
     Set-Fixtures
-    $r = Invoke-Tasks 'update' @{ Id = 1; Text = 'context for alpha - See [[Plan-X]] and [[Other-Doc|alias]]' }
+    $r = Invoke-Tasks 'update' @{ Id = 1; Text = 'rules are in place; run one - See [[Plan-X]] and [[Other-Doc|alias]].'; AddTag = 'group/w' }
     Expect ($r.Code -eq 0) $r.Err
     $r = Invoke-Tasks 'done' @{ Id = 1 }
     Expect ($r.Code -eq 0) $r.Err
-    Expect ($r.Json.Text -eq '[[Plan-X]] [[Other-Doc|alias]]') $r.Out
-    Expect ($r.Json.Raw -eq "- [x] **Alpha** - [[Plan-X]] [[Other-Doc|alias]] | 🆔 1 ➕ 2026-01-01 ✅ $today") $r.Json.Raw
+    Expect ($r.Json.Text -eq 'rules are in place; run one - See [[Plan-X]] and [[Other-Doc|alias]].') $r.Out
+    Expect ($r.Json.Raw -eq "- [x] **Alpha** - rules are in place; run one - See [[Plan-X]] and [[Other-Doc|alias]]. #group/w | 🆔 1 ➕ 2026-01-01 ✅ $today") $r.Json.Raw
+    $g = @((Invoke-Tasks 'groups').Json) | Where-Object { $_.Group -eq 'w' }
+    Expect ($null -ne $g -and $g.Closed -ge 1) "closed task still counted in its group: $($g | ConvertTo-Json -Compress)"
     Ok
 }
 
@@ -604,6 +606,21 @@ Run-Test 'cancel: symbol and cancelled date; compact Done at end of file' {
     Expect ($r.Json.Status -eq 'cancelled' -and $r.Json.CancelledDate -eq $today -and $null -eq $r.Json.DoneDate) $r.Out
     Expect-Error (Invoke-Tasks 'done' @{ Id = 11 }) '^Task 11 is already cancelled$'
     Expect-Error (Invoke-Tasks 'cancel' @{ Id = 4 }) '^Task 4 is already done$'
+    Ok
+}
+
+Run-Test 'done/cancel: -Date backdates; future, none, and malformed dates fail' {
+    Set-Fixtures
+    $r = Invoke-Tasks 'done' @{ Id = 1; Date = '2026-01-05' }
+    Expect ($r.Code -eq 0) $r.Err
+    Expect ($r.Json.DoneDate -eq '2026-01-05' -and $r.Json.Raw -eq '- [x] **Alpha** - first | 🆔 1 ➕ 2026-01-01 ✅ 2026-01-05') $r.Out
+    $r = Invoke-Tasks 'cancel' @{ Id = 11; Date = '2026-01-03' }
+    Expect ($r.Code -eq 0) $r.Err
+    Expect ($r.Json.CancelledDate -eq '2026-01-03' -and $null -eq $r.Json.DoneDate) $r.Out
+    $future = (Get-Date).Date.AddDays(1).ToString('yyyy-MM-dd')
+    Expect-Error (Invoke-Tasks 'done' @{ Id = 2; Date = $future }) "^Invalid -Date '$future'\. It is after today \($today\)$"
+    Expect-Error (Invoke-Tasks 'done' @{ Id = 2; Date = 'none' }) "^Invalid -Date 'none'\. A finished task needs a date; omit -Date for today$"
+    Expect-Error (Invoke-Tasks 'done' @{ Id = 2; Date = '2026-13-01' }) "^Invalid -Date '2026-13-01'\. Use yyyy-MM-dd or none$"
     Ok
 }
 
@@ -631,9 +648,9 @@ Run-Test 'done: LinkedDoc for a Task- link (present, missing) and null for a pla
         ''
         '## ✅ Done'
         ''
-        "- [x] [[Plan-Thing]] | 🆔 22 ➕ 2026-01-01 ✅ $today"
+        "- [x] [[Plan-Thing]] - do X | 🆔 22 ➕ 2026-01-01 ✅ $today"
         "- [x] [[Task-21-No-Doc]] | 🆔 21 ➕ 2026-01-01 ✅ $today"
-        "- [x] [[Task-20-Has-Doc]] | 🆔 20 ➕ 2026-01-01 ✅ $today"
+        "- [x] [[Task-20-Has-Doc]] #t | 📅 2026-05-01 🆔 20 ➕ 2026-01-01 ✅ $today"
     ))
     Ok
 }

@@ -15,8 +15,8 @@
 #   .\tasks.ps1 -Action update   -Id <int> [-Title] [-Text] [-AddTag <tag[]>] [-RemoveTag <tag[]>] [-Priority]
 #                                [-Start|-Scheduled|-Due <date|none>] [-Status] [-Section] [-AddChild <text[]>]
 #   .\tasks.ps1 -Action promote  -Id <int> [-Title <text>] [-Intro <text>]
-#   .\tasks.ps1 -Action done     -Id <int>
-#   .\tasks.ps1 -Action cancel   -Id <int>
+#   .\tasks.ps1 -Action done     -Id <int> [-Date <date>]
+#   .\tasks.ps1 -Action cancel   -Id <int> [-Date <date>]
 #   .\tasks.ps1 -Action prune    [-Path <file|folder>] [-Days <int>] [-Apply]
 #   .\tasks.ps1 -Action backfill [-Path <file|folder>]
 #
@@ -36,7 +36,8 @@
 #   they rewrite; list, check, groups, and prune never change a line)
 #   promote   creates Task-<Id>-<Title>.md from templates/Task-Template.md (H1 in Title Case,
 #             intro capitalized); the line becomes the link
-#   done      [x] + done date, fields/tags/text dropped, block moved to the top of Done
+#   done      [x] + done date (-Date, default today; never in the future); the line otherwise
+#             unchanged, block moved to the top of Done
 #   cancel    [-] + cancelled date, otherwise as done
 #   prune     Done items older than -Days (default 7); preview unless -Apply
 #   backfill  stamps a missing ID and created date on every task line
@@ -77,6 +78,8 @@ param(
     [string]$Start,
     [string]$Scheduled,
     [string]$Due,
+    # Done or cancelled date for done and cancel; defaults to today.
+    [string]$Date,
     [string[]]$Children,
     [string[]]$AddTag,
     [string[]]$RemoveTag,
@@ -690,12 +693,16 @@ function Invoke-Finish([string]$Kind) {
 
     $f = Copy-TaskFields $t
     Add-MissingStamps $f
-    # The done form keeps the title and any wikilinks the text carried (a plan or other doc the
-    # task pointed at stays reachable from the Done trail); everything else on the line goes.
-    $kept = @([regex]::Matches([string]$t.Text, '\[\[[^\]]+\]\]') | ForEach-Object { $_.Value })
-    $f.Text = ($kept -join ' '); $f.Tags = @(); $f.Priority = $null; $f.Start = $null; $f.Scheduled = $null; $f.Due = $null
-    if ($Kind -eq 'done') { $f.Symbol = 'x'; $f.DoneDate = $Today; $f.CancelledDate = $null }
-    else                  { $f.Symbol = '-'; $f.CancelledDate = $Today; $f.DoneDate = $null }
+    # Finishing is a plain move: title, text, tags, priority, and dates all stay on the line, so
+    # a closed task keeps its context and its group tag (views and group counts still see it).
+    $when = $Today
+    if ($script:Bound.ContainsKey('Date')) {
+        if ($Date -ieq 'none') { Fail "Invalid -Date 'none'. A finished task needs a date; omit -Date for today" }
+        $when = Get-DateValue 'Date' $Date
+        if ($when -gt $Today) { Fail "Invalid -Date '$Date'. It is after today ($Today)" }
+    }
+    if ($Kind -eq 'done') { $f.Symbol = 'x'; $f.DoneDate = $when; $f.CancelledDate = $null }
+    else                  { $f.Symbol = '-'; $f.CancelledDate = $when; $f.DoneDate = $null }
 
     $lines = New-LineList $m
     $idx = $t.LineNumber - 1

@@ -106,6 +106,12 @@ switch ($Action) {
         if (-not $Message) { Write-Error 'Commit requires -Message'; exit 1 }
         $parts = @($Message)
         if ($ExtraBody) { $parts += ($ExtraBody -join "`n") }
+        # No AI attribution in vault history: refuse rather than strip, so the caller corrects itself.
+        $attribution = @($parts -split "`r?`n" | Where-Object { $_ -match '^\s*(co-authored-by|claude-session):' })
+        if ($attribution) {
+            Write-Error ("Commit refused: vault commits carry no AI attribution. Remove these lines from -Message/-ExtraBody and commit again:`n" + ($attribution -join "`n"))
+            exit 1
+        }
         $parts += 'Generated-by: vault-sync'
         $fullMessage = $parts -join "`n`n"
 

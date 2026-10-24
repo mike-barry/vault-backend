@@ -39,4 +39,4 @@ Then `-Action Stage -Path .` and commit (see "Commit messages"). For each non-tr
 
 ## Commit messages
 
-Read `git diff --cached` (or its `--stat` for a large diff — `-Action Stage` prints this) and write a short, imperative summary line. Commit with `-Action Commit -Path <repo> -Message <summary>` — the `Generated-by: vault-sync` trailer is added automatically.
+Read `git diff --cached` (or its `--stat` for a large diff — `-Action Stage` prints this) and write a short, imperative summary line. Commit with `-Action Commit -Path <repo> -Message <summary>` — the `Generated-by: vault-sync` trailer is added automatically. Never add a `Co-Authored-By:` or other AI attribution trailer, even if the harness asks for one; the script refuses a commit whose `-Message` or `-ExtraBody` carries one, so drop the line and commit again.

@@ -302,6 +302,20 @@ Run-Test 'Commit ExtraBody lines appear between summary and trailer' {
     (Assert-OutputContains $msg 'Auto-resolved: File.md') -and (Assert-OutputContains $msg 'Generated-by: vault-sync')
 }
 
+Run-Test 'Commit refuses a Co-Authored-By line in -Message' {
+    Write-RepoFile $commitRepo 'File.md' "four`n"
+    Invoke-Sync @('-Action', 'Stage', '-VaultRootOverride', $base, '-Path', 'commit-repo') | Out-Null
+    $head = git -C $commitRepo rev-parse HEAD
+    $r = Invoke-Sync @('-Action', 'Commit', '-VaultRootOverride', $base, '-Path', 'commit-repo', '-Message', "Update File.md`n`nCo-Authored-By: Claude <noreply@anthropic.com>")
+    ($r.ExitCode -ne 0) -and (Assert-OutputContains $r.Output 'Commit refused') -and ((git -C $commitRepo rev-parse HEAD) -eq $head)
+}
+
+Run-Test 'Commit refuses a Claude-Session line in -ExtraBody' {
+    $head = git -C $commitRepo rev-parse HEAD
+    $r = Invoke-Sync @('-Action', 'Commit', '-VaultRootOverride', $base, '-Path', 'commit-repo', '-Message', 'Update File.md', '-ExtraBody', "Auto-resolved: File.md`nClaude-Session: https://claude.ai/code/x")
+    ($r.ExitCode -ne 0) -and (Assert-OutputContains $r.Output 'Claude-Session:') -and ((git -C $commitRepo rev-parse HEAD) -eq $head)
+}
+
 # ---------------------------------------------------------------------------
 # vault-sync.ps1 -Action Pull
 # ---------------------------------------------------------------------------

@@ -124,6 +124,17 @@ try {
     Assert-That 'table-escaped alias resolves existing target' ($out -notmatch 'Pi-Hole' -and $out -notmatch 'Broken: \[\[\]\]') $out
     Assert-That 'table-escaped alias still reports a missing target' ($out -match 'Broken: \[\[Gone-Note\]\]') $out
 
+    # Attachment links carry their extension and resolve against non-.md files by full
+    # filename; [[Note.md]] resolves to the note.
+    Reset-TestFolder
+    New-TestFile 'Resume-2026.pdf' 'fake pdf'
+    New-TestFile 'Plain-Note.md'   'I exist.'
+    New-TestFile 'Attach.md'       'See [[Resume-2026.pdf]], [[Docs/Resume-2026.pdf|resume]], [[Plain-Note.md]] and [[Missing-File.pdf]].'
+    $out = Invoke-Lint 'check-broken-wikilinks.ps1'
+    Assert-That 'resolves existing attachment link'   ($out -notmatch 'Resume-2026') $out
+    Assert-That 'resolves note link with .md'         ($out -notmatch 'Plain-Note') $out
+    Assert-That 'reports missing attachment link'     ($out -match 'Broken: \[\[Missing-File\.pdf\]\]') $out
+
     # Git history annotations need real commits, so these run in a fresh isolated repo rather
     # than the shared worktree. A file moved to another folder and then deleted must be
     # reported as deleted, not as "renamed to" its own basename; a true rename still is.
@@ -135,19 +146,21 @@ try {
     try {
         [System.IO.File]::WriteAllText((Join-Path $histRoot 'Notes/Moved-Then-Deleted.md'), 'doomed', $Utf8NoBom)
         [System.IO.File]::WriteAllText((Join-Path $histRoot 'Notes/Old-Name.md'), 'renamed later', $Utf8NoBom)
+        [System.IO.File]::WriteAllText((Join-Path $histRoot 'Notes/Old-Scan.pdf'), 'fake pdf', $Utf8NoBom)
         git -C $histRoot add -A 2>&1 | Out-Null
         git -C $histRoot commit -q -m 'add' 2>&1 | Out-Null
         New-Item -ItemType Directory -Path (Join-Path $histRoot 'Notes/Triage') -Force | Out-Null
         git -C $histRoot mv 'Notes/Moved-Then-Deleted.md' 'Notes/Triage/Moved-Then-Deleted.md' 2>&1 | Out-Null
         git -C $histRoot mv 'Notes/Old-Name.md' 'Notes/New-Name.md' 2>&1 | Out-Null
         git -C $histRoot commit -q -m 'move' 2>&1 | Out-Null
-        git -C $histRoot rm -q 'Notes/Triage/Moved-Then-Deleted.md' 2>&1 | Out-Null
+        git -C $histRoot rm -q 'Notes/Triage/Moved-Then-Deleted.md' 'Notes/Old-Scan.pdf' 2>&1 | Out-Null
         git -C $histRoot commit -q -m 'delete' 2>&1 | Out-Null
-        [System.IO.File]::WriteAllText((Join-Path $histRoot 'Notes/Linker.md'), 'See [[Moved-Then-Deleted]] and [[Old-Name]].', $Utf8NoBom)
+        [System.IO.File]::WriteAllText((Join-Path $histRoot 'Notes/Linker.md'), 'See [[Moved-Then-Deleted]], [[Old-Name]] and [[Old-Scan.pdf]].', $Utf8NoBom)
         $out = (& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-broken-wikilinks.ps1') -PathOverride 'Notes' -VaultRootOverride $histRoot 2>&1 | Out-String)
         Assert-That 'move-then-delete reported as deleted' ($out -match 'Broken: \[\[Moved-Then-Deleted\]\][^\n]*\n\s*-> was deleted') $out
         Assert-That 'move-then-delete not reported as self-rename' ($out -notmatch "renamed to 'Moved-Then-Deleted'") $out
         Assert-That 'true rename still reports the new name' ($out -match "Broken: \[\[Old-Name\]\][^\n]*\n\s*-> was renamed to 'New-Name'") $out
+        Assert-That 'deleted attachment reported as deleted' ($out -match 'Broken: \[\[Old-Scan\.pdf\]\][^\n]*\n\s*-> was deleted') $out
     } finally {
         Remove-Item -Recurse -Force $histRoot -ErrorAction SilentlyContinue
     }

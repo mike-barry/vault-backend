@@ -62,12 +62,41 @@ function Test-IgnoredLink {
 # check-markdown-anchor-links.ps1), so a skill doc must count as an existing note like any other.
 $indexRoot = if ($PathOverride) { Resolve-VaultPath -VaultRoot $vaultRoot -Path $PathOverride } else { $vaultRoot }
 $currentNotes = @{}
+# Non-.md files (PDFs, Word docs, images) are indexed by full filename, since a wikilink to an
+# attachment carries its extension ([[Resume.pdf]]) and Obsidian resolves it.
+$currentAttachments = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
 # -Force so dot-prefixed folders (hidden on Linux/macOS without it) are indexed as on Windows.
-Get-ChildItem -Path $indexRoot -Recurse -Force -Filter "*.md" | ForEach-Object {
-    $currentNotes[$_.BaseName] = $true
+# .git is skipped at the top level so the walk never descends into the object store.
+Get-ChildItem -Path $indexRoot -Force | Where-Object { $_.Name -ne '.git' } | ForEach-Object {
+    if ($_.PSIsContainer) { Get-ChildItem -Path $_.FullName -Recurse -Force -File } else { $_ }
+} | ForEach-Object {
+    if ($_.Extension -eq '.md') {
+        $currentNotes[$_.BaseName] = $true
+    } else {
+        [void]$currentAttachments.Add($_.Name)
+    }
 }
 
-# Build git history: renames (oldName -> newName) and deletes
+# A link target names a note by basename and an attachment by full filename. [[Note.md]] is
+# also a valid note link, so a trailing .md is stripped before the note lookup.
+function Get-LinkKey {
+    param([string]$Path)
+    if ([System.IO.Path]::GetExtension($Path) -eq '.md') {
+        [System.IO.Path]::GetFileNameWithoutExtension($Path)
+    } else {
+        [System.IO.Path]::GetFileName($Path)
+    }
+}
+
+function Test-LinkTarget {
+    param([string]$Target)
+    if ($currentNotes.ContainsKey($Target)) { return $true }
+    if ($currentAttachments.Contains($Target)) { return $true }
+    if ($Target -match '\.md$') { return $currentNotes.ContainsKey((Get-LinkKey $Target)) }
+    return $false
+}
+
+# Build git history: renames (oldName -> newName) and deletes, keyed like link targets
 $renameMap  = @{}
 $deletedSet = @{}
 
@@ -75,8 +104,8 @@ $gitRenames = git -C $vaultRoot log --diff-filter=R --name-status --pretty=forma
     Where-Object { $_ -ne '' }
 foreach ($line in $gitRenames) {
     if ($line -match '^R\d*\t(.+)\t(.+)$') {
-        $oldName = [System.IO.Path]::GetFileNameWithoutExtension($Matches[1])
-        $newName = [System.IO.Path]::GetFileNameWithoutExtension($Matches[2])
+        $oldName = Get-LinkKey $Matches[1]
+        $newName = Get-LinkKey $Matches[2]
         if (-not $renameMap.ContainsKey($oldName)) {
             $renameMap[$oldName] = $newName
         }
@@ -84,9 +113,9 @@ foreach ($line in $gitRenames) {
 }
 
 $gitDeletes = git -C $vaultRoot log --diff-filter=D --name-only --pretty=format: 2>$null |
-    Where-Object { $_ -ne '' -and $_ -match '\.md$' }
+    Where-Object { $_ -ne '' }
 foreach ($line in $gitDeletes) {
-    $deletedSet[[System.IO.Path]::GetFileNameWithoutExtension($line)] = $true
+    $deletedSet[(Get-LinkKey $line)] = $true
 }
 
 # Scan for broken wiki-links
@@ -114,16 +143,18 @@ Get-LintMarkdownFiles -PathOverride $PathOverride -VaultRootOverride $vaultRoot 
         # Strip path prefix if present (e.g. Folder/Note -> Note)
         $target = ($raw -split '[/\\]')[-1]
 
-        if ($currentNotes.ContainsKey($target)) { continue }
+        if (Test-LinkTarget $target) { continue }
         if (Test-IgnoredLink -Target $target -RelPath $relPath) { $ignoredCount++; continue }
+        # History is keyed without .md, so [[Note.md]] looks up as Note
+        $histKey = Get-LinkKey $target
 
         # A rename is only a usable remedy when the new name still exists. A file moved to
         # another folder and later deleted leaves a rename entry pointing at its own basename,
         # so without this check it would be reported as "renamed to itself".
-        $renamedTo = if ($renameMap.ContainsKey($target)) { $renameMap[$target] } else { $null }
-        $history = if ($renamedTo -and $currentNotes.ContainsKey($renamedTo)) {
+        $renamedTo = if ($renameMap.ContainsKey($histKey)) { $renameMap[$histKey] } else { $null }
+        $history = if ($renamedTo -and (Test-LinkTarget $renamedTo)) {
             "was renamed to '$renamedTo'"
-        } elseif ($deletedSet.ContainsKey($target) -or ($renamedTo -and $deletedSet.ContainsKey($renamedTo))) {
+        } elseif ($deletedSet.ContainsKey($histKey) -or ($renamedTo -and $deletedSet.ContainsKey($renamedTo))) {
             "was deleted"
         } else {
             "no history found"

@@ -854,6 +854,134 @@ Run-Test 'backfill: -Path scope still takes the next ID from the whole repo' {
 }
 
 # ===========================================================================
+Write-Host "`n-- renumber --"
+
+function Format-Renumber($R) { "$($R.File):$($R.LineNumber):$($R.OldId)>$($R.NewId)" }
+
+# A throwaway git repo outside the worktree, for -Against: a nested repo under $testRoot
+# would survive Reset-TestFolder's git clean. A test assigns it to a local $testRoot, which
+# New-TestFile, Invoke-Tasks, and Expect-File then read, and removes it when done.
+function New-TestRepo {
+    $r = Join-Path ([System.IO.Path]::GetTempPath()) "vault-tasks-renumber-$(Get-Random)"
+    git init -q $r 2>&1 | Out-Null
+    git -C $r config user.email test@test.com 2>&1 | Out-Null
+    git -C $r config user.name Test 2>&1 | Out-Null
+    git -C $r config commit.gpgsign false 2>&1 | Out-Null
+    return $r
+}
+function Save-TestRepo([string]$Repo, [string]$Tag) {
+    git -C $Repo add -A 2>&1 | Out-Null
+    git -C $Repo commit -q -m $Tag 2>&1 | Out-Null
+    git -C $Repo tag $Tag 2>&1 | Out-Null
+}
+
+Run-Test 'renumber: keeper by created date then path order, consecutive IDs, preview writes nothing' {
+    $RA = @('## 🔥 Current', '- [ ] a5 | 🆔 5 ➕ 2026-01-02', '- [ ] a6 | 🆔 6 ➕ 2026-01-01')
+    $RB = @('## 🔥 Current', '- [ ] b5 | 🆔 5 ➕ 2026-01-01', '- [ ] b6 | 🆔 6 ➕ 2026-01-01', '- [ ] b7 | 🆔 7')
+    New-TestFile 'Areas/A/Tasks.md' (Text $RA)
+    New-TestFile 'Areas/B/Tasks.md' (Text $RB)
+    New-TestFile 'Archive/Old/Tasks.md' (Text @('## ✅ Done', '- [x] old | 🆔 9'))
+    $r = Invoke-Tasks 'renumber'
+    Expect ($r.Code -eq 0) "exit $($r.Code): $($r.Err)"
+    $got = @($r.Json | ForEach-Object { Format-Renumber $_ }) -join ' '
+    Expect ($got -eq 'Areas/A/Tasks.md:2:5>10 Areas/B/Tasks.md:3:6>11') "got $got"
+    $props = @(@($r.Json)[0].PSObject.Properties.Name) -join ','
+    Expect ($props -eq 'OldId,NewId,File,LineNumber,Reason,DocRename,Skipped') $props
+    Expect (@($r.Json)[0].Reason -eq 'Created: Areas/B/Tasks.md:2 was created earlier (2026-01-01)') @($r.Json)[0].Reason
+    Expect (@($r.Json)[1].Reason -eq 'Order: Areas/A/Tasks.md:3 has the same created date and comes first in path order') @($r.Json)[1].Reason
+    Expect ($null -eq @($r.Json)[0].DocRename -and @($r.Json)[0].Skipped -eq $false) 'DocRename null, not skipped'
+    Expect-File 'Areas/A/Tasks.md' (Text $RA)
+    Expect-File 'Areas/B/Tasks.md' (Text $RB)
+    $a = Invoke-Tasks 'renumber' @{ Apply = $true }
+    Expect ((@($a.Json | ForEach-Object { Format-Renumber $_ }) -join ' ') -eq $got) "apply: $($a.Out) $($a.Err)"
+    Expect-File 'Areas/A/Tasks.md' (Text (Splice $RA 1 1 @('- [ ] a5 | 🆔 10 ➕ 2026-01-02')))
+    Expect-File 'Areas/B/Tasks.md' (Text (Splice $RB 2 1 @('- [ ] b6 | 🆔 11 ➕ 2026-01-01')))
+    $c = Invoke-Tasks 'check'
+    Expect (@($c.Json | Where-Object Code -eq 'DuplicateId').Count -eq 0) "duplicates left: $($c.Out)"
+    $again = Invoke-Tasks 'renumber'
+    Expect ($again.Code -eq 0 -and $again.Out.Trim() -eq '[]') "second run: $($again.Out)"
+    Ok
+}
+
+Run-Test 'renumber: -Against keeps the published line (by title within one file); bad ref fails' {
+    $testRoot = New-TestRepo
+    try {
+        New-TestFile 'Areas/A/Tasks.md' (Text @('## 🔥 Current', '- [ ] same one | 🆔 6 ➕ 2026-01-01', '- [ ] pub | 🆔 5 ➕ 2026-01-05'))
+        Save-TestRepo $testRoot 'up'
+        $RA = @('## 🔥 Current', '- [ ] same two | 🆔 6 ➕ 2026-01-01', '- [ ] same one | 🆔 6 ➕ 2026-01-01', '- [ ] pub | 🆔 5 ➕ 2026-01-05')
+        New-TestFile 'Areas/A/Tasks.md' (Text $RA)
+        New-TestFile 'Areas/B/Tasks.md' (Text @('## 🔥 Current', '- [ ] local | 🆔 5 ➕ 2026-01-01'))
+        $plain = Invoke-Tasks 'renumber'
+        $gotP = @($plain.Json | ForEach-Object { Format-Renumber $_ }) -join ' '
+        Expect ($gotP -eq 'Areas/A/Tasks.md:4:5>7 Areas/A/Tasks.md:3:6>8') "without -Against: $gotP $($plain.Err)"
+        $r = Invoke-Tasks 'renumber' @{ Against = 'up' }
+        Expect ($r.Code -eq 0) "exit $($r.Code): $($r.Err)"
+        $got = @($r.Json | ForEach-Object { Format-Renumber $_ }) -join ' '
+        Expect ($got -eq 'Areas/B/Tasks.md:2:5>7 Areas/A/Tasks.md:2:6>8') "got $got"
+        Expect (@($r.Json)[0].Reason -eq 'Published: Areas/A/Tasks.md:4 is in up and this line is not') @($r.Json)[0].Reason
+        Expect (@($r.Json)[1].Reason -eq 'Published: Areas/A/Tasks.md:3 is in up and this line is not') @($r.Json)[1].Reason
+        $a = Invoke-TasksFile 'renumber' @('-Against', 'up', '-Apply')
+        Expect ($a.Code -eq 0) "pwsh -File apply: $($a.Err)"
+        Expect-File 'Areas/A/Tasks.md' (Text (Splice $RA 1 1 @('- [ ] same two | 🆔 8 ➕ 2026-01-01')))
+        Expect-File 'Areas/B/Tasks.md' (Text @('## 🔥 Current', '- [ ] local | 🆔 7 ➕ 2026-01-01'))
+        Expect-Error (Invoke-Tasks 'renumber' @{ Against = 'no-such-ref' }) "^Cannot resolve -Against 'no-such-ref' to a commit$"
+    } finally {
+        Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Ok
+}
+
+Run-Test 'renumber: -Id with -Path renumbers the occurrences under it; errors' {
+    $RA = @('## 🔥 Current', '- [ ] a5 | 🆔 5 ➕ 2026-01-01')
+    $RB = @('## 🔥 Current', '- [ ] b5 | 🆔 5 ➕ 2026-01-02', '- [ ] solo | 🆔 3 ➕ 2026-01-01')
+    New-TestFile 'Areas/A/Tasks.md' (Text $RA)
+    New-TestFile 'Areas/B/Tasks.md' (Text $RB)
+    New-TestFile 'Areas/C/Tasks.md' (Text @('## 🔥 Current', '- [ ] c | 🆔 4 ➕ 2026-01-01'))
+    Expect-Error (Invoke-Tasks 'renumber' @{ Id = 5; Path = 'Areas/C' }) '^Task 5 has no line under Areas/C$'
+    Expect-Error (Invoke-Tasks 'renumber' @{ Id = 5; Path = 'Areas' }) '^Every line of task 5 is under Areas; at least one must keep the ID$'
+    Expect-Error (Invoke-Tasks 'renumber' @{ Id = 3; Path = 'Areas/B/Tasks.md' }) '^Every line of task 3 is under Areas/B/Tasks\.md; at least one must keep the ID$'
+    Expect-Error (Invoke-Tasks 'renumber' @{ Path = 'Areas/A' }) '^-Action renumber takes -Path only with -Id$'
+    Expect-Error (Invoke-Tasks 'renumber' @{ Id = 5; Path = 'Areas/A'; Against = 'HEAD' }) '^-Path and -Against do not combine'
+    Expect-Error (Invoke-Tasks 'renumber' @{ Id = 99 }) '^Task 99 not found$'
+    $u = Invoke-Tasks 'renumber' @{ Id = 3 }
+    Expect ($u.Code -eq 0 -and $u.Out.Trim() -eq '[]') "unique id: $($u.Out) $($u.Err)"
+    $d = Invoke-Tasks 'renumber' @{ Id = 5 }
+    Expect ((@($d.Json | ForEach-Object { Format-Renumber $_ }) -join ' ') -eq 'Areas/B/Tasks.md:2:5>6') "date rule: $($d.Out)"
+    $r = Invoke-Tasks 'renumber' @{ Id = 5; Path = 'Areas/A'; Apply = $true }
+    Expect ($r.Code -eq 0) "exit $($r.Code): $($r.Err)"
+    Expect ((@($r.Json | ForEach-Object { Format-Renumber $_ }) -join ' ') -eq 'Areas/A/Tasks.md:2:5>6' -and @($r.Json)[0].Reason -eq 'Path: under -Path Areas/A') "got $($r.Out)"
+    Expect-File 'Areas/A/Tasks.md' (Text @('## 🔥 Current', '- [ ] a5 | 🆔 6 ➕ 2026-01-01'))
+    Expect-File 'Areas/B/Tasks.md' (Text $RB)
+    Ok
+}
+
+Run-Test 'renumber: promoted line keeps its title and reports DocRename; -SkipPromoted' {
+    $RB = @('## 🔥 Current', '- [ ] [[Task-5-Beta]] #t | 🆔 5 ➕ 2026-01-02', '- [ ] [[Task-7-Gone]] - note | 🆔 7 ➕ 2026-01-02')
+    New-TestFile 'Areas/A/Tasks.md' (Text @('## 🔥 Current', '- [ ] [[Task-5-Alpha]] | 🆔 5 ➕ 2026-01-01', '- [ ] x7 | 🆔 7 ➕ 2026-01-01'))
+    New-TestFile 'Areas/B/Tasks.md' (Text $RB)
+    New-TestFile 'Areas/A/Inbox/Task-5-Alpha.md' "# Alpha`n"
+    New-TestFile 'Areas/B/Inbox/Task-5-Beta.md' "# Beta`n"
+    $s = Invoke-Tasks 'renumber' @{ SkipPromoted = $true }
+    Expect ($s.Code -eq 0) "exit $($s.Code): $($s.Err)"
+    $gotS = @($s.Json | ForEach-Object { Format-Renumber $_ }) -join ' '
+    Expect ($gotS -eq 'Areas/B/Tasks.md:2:5> Areas/B/Tasks.md:3:7>8') "skip: $gotS"
+    $j0 = @($s.Json)[0]
+    Expect ($j0.Skipped -eq $true -and $null -eq $j0.NewId -and $null -eq $j0.DocRename) "skipped entry $($j0 | ConvertTo-Json -Compress)"
+    Expect (@($s.Json)[1].Skipped -eq $false -and $null -eq @($s.Json)[1].DocRename) 'missing doc is not skipped'
+    $sa = Invoke-Tasks 'renumber' @{ SkipPromoted = $true; Apply = $true }
+    Expect ($sa.Code -eq 0) $sa.Err
+    Expect-File 'Areas/B/Tasks.md' (Text (Splice $RB 2 1 @('- [ ] [[Task-8-Gone]] - note | 🆔 8 ➕ 2026-01-02')))
+    $r = Invoke-Tasks 'renumber' @{ Apply = $true }
+    Expect ($r.Code -eq 0) "exit $($r.Code): $($r.Err)"
+    Expect ((@($r.Json | ForEach-Object { Format-Renumber $_ }) -join ' ') -eq 'Areas/B/Tasks.md:2:5>9') "got $($r.Out)"
+    $dr = @($r.Json)[0].DocRename
+    Expect ($null -ne $dr -and $dr.OldPath -eq 'Areas/B/Inbox/Task-5-Beta.md' -and $dr.NewPath -eq 'Areas/B/Inbox/Task-9-Beta.md') "DocRename $($dr | ConvertTo-Json -Compress)"
+    Expect-File 'Areas/B/Tasks.md' (Text @('## 🔥 Current', '- [ ] [[Task-5-Beta]] #t | 🆔 9 ➕ 2026-01-02', '- [ ] [[Task-8-Gone]] - note | 🆔 8 ➕ 2026-01-02'))
+    Expect (Test-Path (Join-Path $testRoot 'Areas' 'B' 'Inbox' 'Task-5-Beta.md')) 'the script renamed the doc itself'
+    Ok
+}
+
+# ===========================================================================
 Write-Host "`n-- real files --"
 
 Run-Test 'smoke: list and check over copies of every real Tasks.md' {

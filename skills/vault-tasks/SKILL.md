@@ -1,6 +1,6 @@
 ---
 name: vault-tasks
-description: Manage tasks in the vault's per-context Tasks.md files and the task views and sprints built over them. Use when the user wants to add, start, finish, cancel, block, move, or tag a task; promote a task to its own doc; ask what they are working on or what is in a sprint, group, or task view; create a task view; add a reminder; prune done tasks; check or backfill task files; or init a Tasks.md. Trigger phrases include "add a task", "mark X done", "X is blocked", "move X to current", "what am I working on", "my weekend sprint", "what's in the sprint", "show the task view", "create a task view", "add this to the sprint", "tag this for X", "promote this task", "remind me", "prune done tasks", "check task files", "init task files".
+description: Manage tasks in the vault's per-context Tasks.md files and the task views and sprints built over them. Use when the user wants to add, start, finish, cancel, block, move, or tag a task; promote a task to its own doc; ask what they are working on or what is in a sprint, group, or task view; create a task view; add a reminder; prune done tasks; check, backfill, or renumber task files; or init a Tasks.md. Trigger phrases include "add a task", "mark X done", "X is blocked", "move X to current", "what am I working on", "my weekend sprint", "what's in the sprint", "show the task view", "create a task view", "add this to the sprint", "tag this for X", "promote this task", "remind me", "prune done tasks", "check task files", "init task files".
 ---
 
 # Vault Tasks
@@ -116,7 +116,7 @@ Scope to the file in context, or the repo if the user asks for all; ask if neith
 -Action check [-Path <file|folder>]
 ```
 
-Report problems grouped by code. Fixes: `LegacyHeading` - rename the `Active` or `Sprint` heading to `Current` by hand, keeping its emoji prefix; `MissingId` or `MissingCreated` - run backfill. Any other code: report it and ask.
+Report problems grouped by code. Fixes: `LegacyHeading` - rename the `Active` or `Sprint` heading to `Current` by hand, keeping its emoji prefix; `MissingId` or `MissingCreated` - run backfill; `DuplicateId` - run [[#Renumber]]. Any other code: report it and ask.
 
 ### Backfill
 
@@ -125,6 +125,16 @@ Report problems grouped by code. Fixes: `LegacyHeading` - rename the `Active` or
 ```
 
 Stamps missing IDs and created dates. Safe to re-run.
+
+### Renumber
+
+Fixes `DuplicateId`, which two clones adding tasks between syncs can create:
+
+```
+-Action renumber [-Id <n> [-Path <file|folder>]] [-Against <git-ref>] [-SkipPromoted] [-Apply]
+```
+
+One line per duplicated ID keeps it and the rest take the next free IDs. With `-Against` (vault-sync passes `'@{u}'`) the line already in that ref keeps it; otherwise the earliest created date, then path order. Each result's `Reason` says which rule decided. `-Id` limits it to one ID; adding `-Path` renumbers that ID's lines under the path instead, for when the user chooses. This previews; show the moves, then re-run with `-Apply`. Only the ID changes: when a result's `DocRename` is non-null, hand its `OldPath` and `NewPath` to `vault-doc-rename` at its programmatic entry point, whose link rewrite fixes the line's `[[Task-<old>-...]]` title.
 
 ## Spin-Out to a Planning Doc
 

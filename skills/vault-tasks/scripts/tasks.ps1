@@ -19,6 +19,7 @@
 #   .\tasks.ps1 -Action cancel   -Id <int> [-Date <date>]
 #   .\tasks.ps1 -Action prune    [-Path <file|folder>] [-Days <int>] [-Apply]
 #   .\tasks.ps1 -Action backfill [-Path <file|folder>]
+#   .\tasks.ps1 -Action renumber [-Id <int> [-Path <file|folder>]] [-Against <git-ref>] [-SkipPromoted] [-Apply]
 #
 # Verbs
 #   list      task objects matching the filters, files sorted by path, lines top to bottom
@@ -41,6 +42,18 @@
 #   cancel    [-] + cancelled date, otherwise as done
 #   prune     Done items older than -Days (default 7); preview unless -Apply
 #   backfill  stamps a missing ID and created date on every task line
+#   renumber  { OldId, NewId, File, LineNumber, Reason, DocRename, Skipped } per line moved
+#             off a duplicated ID (every DuplicateId group, or just -Id); one line per ID
+#             keeps it, the rest take consecutive IDs from the next free one. Preview
+#             unless -Apply. Keeper: with -Against, a line is published when its file at
+#             that ref has a task line with the ID (several in one file match by title),
+#             and published lines keep it over unpublished ones; otherwise, or when all or
+#             none are published, the earliest created date, then path and line order.
+#             -Path (with -Id) instead renumbers the occurrences under it, refusing when
+#             that would leave none on the ID. Only the ID changes: a promoted line keeps
+#             its [[Task-<old>-...]] title and DocRename { OldPath, NewPath } names the doc
+#             rename for the caller (a missing doc: the link is rewritten, DocRename null);
+#             -SkipPromoted leaves those lines alone, Skipped true and NewId null
 #   Sections: Current, Blocked, Backlog, SideQuests (or 'Side Quests'), Done, Reminders.
 #   Statuses: todo, in-progress, done, cancelled. Priorities: highest, high, medium, low,
 #   lowest, none. Dates: yyyy-MM-dd, or 'none' to clear; "today" is local time.
@@ -54,14 +67,15 @@
 #   Assumes only that task files are named Tasks.md, that sections use the canonical
 #   headings, and that a task doc goes in an Inbox/ folder beside its Tasks.md when one
 #   exists, otherwise beside the Tasks.md. No Projects/, Areas/, or frontmatter convention.
+#   git is run only by renumber -Against; everything else is file-only.
 #   -VaultRootOverride redirects the repo root (unit tests).
 
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('list', 'check', 'groups', 'add', 'update', 'promote', 'done', 'cancel', 'prune', 'backfill')]
+    [ValidateSet('list', 'check', 'groups', 'add', 'update', 'promote', 'done', 'cancel', 'prune', 'backfill', 'renumber')]
     [string]$Action,
     # Scope for list, check, groups, prune, backfill (a Tasks.md or a folder); the target
-    # Tasks.md or folder for add.
+    # Tasks.md or folder for add; the occurrences to renumber for renumber -Id.
     [string]$Path,
     # Array parameters also take one delimited string, so they work under 'pwsh -File':
     # -Section, -Status, -Tag, -Id, -Tags, -AddTag, -RemoveTag split on commas (pieces
@@ -87,6 +101,9 @@ param(
     [AllowEmptyString()][string]$Intro,
     [int]$Days = 7,
     [switch]$Apply,
+    # Git ref renumber compares against to find published lines (e.g. '@{u}').
+    [string]$Against,
+    [switch]$SkipPromoted,
     # Override the vault root; used by unit tests to redirect to a temporary worktree.
     [string]$VaultRootOverride
 )
@@ -817,6 +834,136 @@ function Invoke-Backfill {
     Write-Json @($out.ToArray())
 }
 
+# Task lines in $Rel (repo-relative, '/') as committed at -Against; none when the file is
+# absent there. Read leniently, line by line, with no section rules.
+function Get-RefTasks([string]$Rel) {
+    $text = git -C $VaultRoot.TrimEnd('\', '/') show "${Against}:./$Rel" 2>$null
+    if ($LASTEXITCODE -ne 0) { return @() }
+    return @(foreach ($l in @($text)) { $t = ConvertFrom-TaskLine -Line $l; if ($t) { $t } })
+}
+
+# Move all but one occurrence of each duplicated numeric ID onto fresh IDs; see the header
+# for the keeper rules. Occurrences carry Order (file order, then line) for the tie-break.
+function Invoke-Renumber {
+    $one = $null
+    if ($script:Bound.ContainsKey('Id')) { $one = Get-SingleId }
+    if ($Path -and $null -eq $one) { Fail '-Action renumber takes -Path only with -Id' }
+    if ($Path -and $Against) { Fail '-Path and -Against do not combine; -Path chooses the occurrences to renumber itself' }
+    if ($Against) {
+        $null = git -C $VaultRoot.TrimEnd('\', '/') rev-parse --verify --quiet "$Against^{commit}" 2>$null
+        if ($LASTEXITCODE -ne 0) { Fail "Cannot resolve -Against '$Against' to a commit" }
+    }
+
+    $models = @{}
+    $byId = [System.Collections.Generic.Dictionary[string, object]]::new()
+    $order = 0
+    foreach ($f in Get-TaskFiles -VaultRoot $VaultRoot) {
+        $m = Get-Model $f
+        $models[$m.Path] = $m
+        foreach ($t in $m.Tasks) {
+            if ($null -eq $t.IdNumber) { continue }
+            if ($null -ne $one -and $t.IdNumber -ne $one) { continue }
+            if (-not $byId.ContainsKey($t.Id)) { $byId[$t.Id] = [System.Collections.Generic.List[object]]::new() }
+            $byId[$t.Id].Add([PSCustomObject]@{ Task = $t; Model = $m; Order = $order++; Published = $false })
+        }
+    }
+    if ($null -ne $one -and $byId.Count -eq 0) { Fail "Task $one not found" }
+
+    $scopeAbs = $null; $scopeLeaf = $false
+    if ($Path) {
+        $scopeAbs = Resolve-InputPath $Path
+        $scopeLeaf = Test-Path -LiteralPath $scopeAbs -PathType Leaf
+        if (-not $scopeLeaf) { $scopeAbs = Format-VaultRoot $scopeAbs }
+    }
+    $refCache = @{}
+    $loc = { param($o) "$($o.Task.File):$($o.Task.LineNumber)" }
+    $created = { param($o) if ($o.Task.Created) { $o.Task.Created } else { '9999-99-99' } }   # undated sorts last
+
+    $plan = [System.Collections.Generic.List[object]]::new()
+    $keys = [string[]]@($byId.Keys | Sort-Object { $byId[$_][0].Task.IdNumber }, { $_ })
+    foreach ($k in $keys) {
+        $occ = @($byId[$k])
+        if ($Path) {
+            $under = @($occ | Where-Object {
+                if ($scopeLeaf) { $_.Model.Path -ieq $scopeAbs } else { $_.Model.Path.StartsWith($scopeAbs, [System.StringComparison]::OrdinalIgnoreCase) }
+            })
+            if ($under.Count -eq 0) { Fail "Task $one has no line under $Path" }
+            if ($under.Count -eq $occ.Count) { Fail "Every line of task $one is under $Path; at least one must keep the ID" }
+            foreach ($o in $under) { $plan.Add([PSCustomObject]@{ Occ = $o; Reason = "Path: under -Path $Path" }) }
+            continue
+        }
+        if ($occ.Count -lt 2) { continue }
+
+        # Published: the file at -Against has a line with this ID. Several occurrences in one
+        # file each need a line of their own title there, so one published line covers one.
+        if ($Against) {
+            foreach ($grp in ($occ | Group-Object { $_.Task.File })) {
+                $rel = $grp.Name
+                if (-not $refCache.ContainsKey($rel)) { $refCache[$rel] = Get-RefTasks $rel }
+                $hits = [System.Collections.Generic.List[object]]@($refCache[$rel] | Where-Object { $_.Id -eq $k })
+                if ($hits.Count -eq 0) { continue }
+                if ($grp.Count -eq 1) { $grp.Group[0].Published = $true; continue }
+                foreach ($o in $grp.Group) {
+                    $h = @($hits | Where-Object { $_.Title -ceq $o.Task.Title })
+                    if ($h.Count) { $o.Published = $true; [void]$hits.Remove($h[0]) }
+                }
+            }
+        }
+        $pub = @($occ | Where-Object Published)
+        $split = $pub.Count -gt 0 -and $pub.Count -lt $occ.Count
+        $pool = if ($split) { $pub } else { $occ }
+        $keep = @($pool | Sort-Object { & $created $_ }, Order)[0]
+        foreach ($o in ($occ | Sort-Object Order)) {
+            if ([object]::ReferenceEquals($o, $keep)) { continue }
+            $why = if ($split -and -not $o.Published) { "Published: $(& $loc $keep) is in $Against and this line is not" }
+                elseif ([string]::CompareOrdinal((& $created $o), (& $created $keep)) -gt 0) { "Created: $(& $loc $keep) was created earlier ($($keep.Task.Created))" }
+                else { "Order: $(& $loc $keep) has the same created date and comes first in path order" }
+            $plan.Add([PSCustomObject]@{ Occ = $o; Reason = $why })
+        }
+    }
+    if ($plan.Count -eq 0) { Write-Json @(); return }
+
+    $docs = $null
+    $next = Get-NextTaskId -VaultRoot $VaultRoot
+    $edits = @{}
+    $out = [System.Collections.Generic.List[object]]::new()
+    foreach ($p in $plan) {
+        $t = $p.Occ.Task
+        # A line linking its own Task-<old> doc; a plan link or another task's doc is not one.
+        $doc = $null
+        if ($t.Promoted -and $t.Link -match ('^Task-' + [regex]::Escape($t.Id) + '(?:-|$)')) {
+            if ($null -eq $docs) { $docs = Get-TaskDocs -IncludeArchive }
+            $found = @($docs | Where-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) -ieq $t.Link })
+            if ($found.Count) { $doc = $found[0] }
+        }
+        $skip = $SkipPromoted -and $null -ne $doc
+        $new = $null; $rename = $null
+        if (-not $skip) {
+            $new = $next++
+            $f = Copy-TaskFields $t
+            $f.Id = [string]$new
+            if ($doc) {
+                $oldRel = _Get-RelPath $VaultRoot $doc
+                $stem = [System.IO.Path]::GetFileNameWithoutExtension($doc)
+                $newName = "Task-$new" + $stem.Substring("Task-$($t.Id)".Length) + '.md'
+                $rename = [PSCustomObject][ordered]@{ OldPath = $oldRel; NewPath = $oldRel.Substring(0, $oldRel.LastIndexOf('/') + 1) + $newName }
+            } elseif ($t.Promoted -and $t.Link -match $TaskLink) {
+                # No doc to rename, so nothing would fix the link later: point it at the new ID.
+                $f.Title = $f.Title -replace ('^(\[\[(?:[^\]|#]*/)?)Task-' + [regex]::Escape($t.Id) + '(?=[-|#\]])'), "`${1}Task-$new"
+            }
+            $mp = $p.Occ.Model.Path
+            if (-not $edits.ContainsKey($mp)) { $edits[$mp] = New-LineList $p.Occ.Model }
+            $edits[$mp][$t.LineNumber - 1] = ConvertTo-TaskLine -Task $f
+        }
+        $out.Add([PSCustomObject][ordered]@{
+            OldId = $t.IdNumber; NewId = $new; File = $t.File; LineNumber = $t.LineNumber
+            Reason = $p.Reason; DocRename = $rename; Skipped = $skip
+        })
+    }
+    if ($Apply) { foreach ($mp in $edits.Keys) { Save-Lines $models[$mp] $edits[$mp] } }
+    Write-Json @($out.ToArray())
+}
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
@@ -833,6 +980,7 @@ try {
         'cancel'   { Invoke-Finish 'cancel' }
         'prune'    { Invoke-Prune }
         'backfill' { Invoke-Backfill }
+        'renumber' { Invoke-Renumber }
     }
 } catch {
     Fail $_.Exception.Message

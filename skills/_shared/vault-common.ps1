@@ -192,6 +192,52 @@ function ConvertTo-ComparablePath {
     return (($Path -replace '\\', '/').TrimEnd('/')).ToLowerInvariant()
 }
 
+# Root-relative path with '/' separators: '' for the root itself, or the '/'-normalized
+# absolute path when $Path is not under $Root. The prefix match ignores case.
+function Get-VaultRelativePath {
+    param(
+        # Root directory, with or without a trailing separator (e.g. the vault root).
+        [Parameter(Mandatory)][string]$Root,
+        # Absolute path to express relative to $Root.
+        [Parameter(Mandatory)][string]$Path
+    )
+    $r = Format-VaultRoot $Root
+    if ($Path.StartsWith($r, [System.StringComparison]::OrdinalIgnoreCase)) { return ($Path.Substring($r.Length) -replace '\\', '/') }
+    if ((Format-VaultRoot $Path) -ieq $r) { return '' }
+    return ($Path -replace '\\', '/')
+}
+
+# True when any segment of $RelPath (either separator) is in $Names, ignoring case.
+function Test-ExcludedPathSegment {
+    param(
+        # Relative path to test, e.g. 'Projects/P/Archive/Tasks.md'.
+        [AllowEmptyString()][Parameter(Mandatory)][string]$RelPath,
+        # Folder names that exclude a path when any segment equals one (e.g. 'Archive', '.git').
+        [string[]]$Names = @()
+    )
+    foreach ($seg in ($RelPath -split '[/\\]')) {
+        if ($seg -and @($Names | Where-Object { $_ -ieq $seg }).Count) { return $true }
+    }
+    return $false
+}
+
+# Write a whole file as UTF-8 without BOM: lines joined by $LineEnding plus a trailing one
+# (an empty array writes an empty file). Pairs with a reader that splits on the line ending
+# and drops the empty element after the final newline, so a read-edit-write cycle leaves
+# untouched lines byte-identical.
+function Set-FileLines {
+    param(
+        # File to write; created or overwritten.
+        [Parameter(Mandatory)][string]$Path,
+        # Lines without terminators.
+        [Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Lines,
+        # Line ending to join with and terminate the last line, normally the file's own.
+        [ValidateSet("`n", "`r`n")][string]$LineEnding = "`n"
+    )
+    $text = if ($Lines.Count) { ($Lines -join $LineEnding) + $LineEnding } else { '' }
+    [System.IO.File]::WriteAllText($Path, $text, $Utf8NoBom)
+}
+
 # Enumerate files under $Root whose name matches $Filter, pruning any directory whose own name
 # is in $ExcludeFolderNames (case-insensitive) without descending into it - so a large
 # node_modules or .git tree costs nothing. Hidden and dot-prefixed directories are walked

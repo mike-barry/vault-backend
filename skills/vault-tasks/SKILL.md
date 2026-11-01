@@ -100,7 +100,11 @@ A group is a `#group/<name>` tag on each member line, dated when time-boxed (`gr
 
 - **Find a sprint or task view** ("what's in my weekend sprint", "show the task view"): run `groups` to see every group with its open and closed counts and the view notes that reference it, then `-Action list -Tag group/<name>` for the lines. Views live in the root `Inbox/` while new and in a root `Tasks/` folder once durable; `groups` reports their paths, so no globbing is needed.
 - **Add to a group** ("add this to the sprint"): `-Tags` on `add` or `-AddTag` on `update`.
-- **Create a task view**: copy `templates/View-Template.md` to `Inbox/View-<Name>.md` at the vault root, filling `{{Date}}` (today), `{{Title}}` (say what it is, e.g. `Sprint Weekend 2026-10-17`), `{{Description}}` (one sentence on what it gathers), and `{{Filter}}`: `tags include #group/<name>` for a group, `path includes <folder>` for one context. Write the file directly; a View note carries no directive.
+- **Create a task view**: writes `Inbox/View-<Name>.md` at the vault root; the output's `File` is its path. `-Title` says what it is (e.g. `Sprint Weekend 2026-10-17`) and `-Description` is one sentence on what it gathers. `-Group <name>` filters to that group's tag; for one context pass `-Filter "path includes <folder>"` instead (newline-separated for several query lines). Errors if a view of that name exists.
+
+  ```
+  -Action view -Name <Name> -Title "<title>" -Description "<sentence>" (-Group <name> | -Filter "<query>")
+  ```
 
 ### Prune
 
@@ -146,8 +150,8 @@ The user edits `Tasks.md` by hand in Obsidian; lines without an ID are normal. T
 
 ## Init
 
-Creates a missing `Tasks.md` for one project or area folder. Errors if the file already exists; output is plain text, not JSON.
+Creates a missing `Tasks.md` for one project or area folder; the output's `File` is its path. Errors if the file already exists.
 
 ```
-pwsh -NonInteractive -NoProfile -File .claude/skills/vault-tasks/scripts/init-tasks.ps1 -Path "<folder>"
+-Action init -Path <folder>
 ```

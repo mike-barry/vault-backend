@@ -23,8 +23,7 @@ Then run steps 1-5 against `.claude/` exactly as below (step 4 is vault-root onl
 
 ### 2. Pull
 `-Action Pull -Path .`, check `PullStatus`:
-- `UpToDate` → step 5.
-- `FastForward` / `MergedClean` → step 4.
+- `UpToDate` / `FastForward` / `MergedClean` → step 4. `UpToDate` still goes there: an earlier Obsidian Git pull may have left a collision for step 4 that step 1 just committed.
 - `MergedConflicts` → `ConflictedFiles` lists what to resolve in step 3.
 - `FailedNetwork` / `FailedOther` → stop, report the raw output.
 
@@ -44,10 +43,10 @@ pwsh -NonInteractive -NoProfile -File .claude/skills/vault-tasks/scripts/tasks.p
 
 The line already in the upstream keeps its ID; each result is one local line moved to a new ID. For each result with a non-null `DocRename`, hand its `OldPath` and `NewPath` to `vault-doc-rename` at its programmatic entry point.
 
-Then `-Action Status -Path .`: uncommitted changes here are these renumbers, plus any the `post-merge` hook made during the pull and left uncommitted. If there are any, `-Action Stage -Path .` and make one commit for all of them, naming each move from the diff: `Renumber task 86 to 106 (ID collision with another clone)`. Report each renumber with its file.
+Then `-Action Status -Path .`: uncommitted changes here are these renumbers, plus any the `post-merge` hook made during this pull and left uncommitted (a hook renumber from an earlier pull went out in step 1's commit). If there are any, `-Action Stage -Path .` and make one commit for all of them, naming each move from the diff: `Renumber task 86 to 106 (ID collision with another clone)`. Report each renumber with its file.
 
 ### 5. Push
-`-Action Push -Path .`. Report what was committed, any conflicts, any renumbers, and the push result. A push rejected because the remote moved on (`rejected` in the output) means another clone pushed meanwhile: go back to step 2, run steps 3 and 4 as the pull calls for, and push again.
+`-Action Push -Path .`. Report what was committed, any conflicts, any renumbers, and the push result. A push rejected because the remote moved on (`rejected` in the output) means another clone pushed meanwhile: go back to step 2, run step 3 if the pull calls for it and step 4, and push again.
 
 ## Commit messages
 

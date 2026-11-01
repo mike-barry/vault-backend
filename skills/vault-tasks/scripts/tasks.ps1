@@ -20,6 +20,8 @@
 #   .\tasks.ps1 -Action prune    [-Path <file|folder>] [-Days <int>] [-Apply]
 #   .\tasks.ps1 -Action backfill [-Path <file|folder>]
 #   .\tasks.ps1 -Action renumber [-Id <int> [-Path <file|folder>]] [-Against <git-ref>] [-SkipPromoted] [-Apply]
+#   .\tasks.ps1 -Action init     -Path <folder>
+#   .\tasks.ps1 -Action view     -Name <name> -Title <text> -Description <text> (-Group <name> | -Filter <query>)
 #
 # Verbs
 #   list      task objects matching the filters, files sorted by path, lines top to bottom
@@ -54,6 +56,13 @@
 #             its [[Task-<old>-...]] title and DocRename { OldPath, NewPath } names the doc
 #             rename for the caller (a missing doc: the link is rewritten, DocRename null);
 #             -SkipPromoted leaves those lines alone, Skipped true and NewId null
+#   init      { File, Path } of a new Tasks.md in the -Path folder from templates/Tasks-Template.md
+#             ({{Name}} is the folder name); refuses when one exists
+#   view      { File, Path, Filter } of a new View-<Name>.md task view in the repo root's
+#             Inbox/ (created if missing) from templates/View-Template.md. -Group <name> sets
+#             the filter to 'tags include #group/<name>'; -Filter takes any Tasks query lines
+#             (newline-separated) instead. Refuses when a View-<Name>.md exists anywhere
+#             outside excluded folders, Archive included in the exclusion
 #   Sections: Current, Blocked, Backlog, SideQuests (or 'Side Quests'), Done, Reminders.
 #   Statuses: todo, in-progress, done, cancelled. Priorities: highest, high, medium, low,
 #   lowest, none. Dates: yyyy-MM-dd, or 'none' to clear; "today" is local time.
@@ -72,10 +81,11 @@
 
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('list', 'check', 'groups', 'add', 'update', 'promote', 'done', 'cancel', 'prune', 'backfill', 'renumber')]
+    [ValidateSet('list', 'check', 'groups', 'add', 'update', 'promote', 'done', 'cancel', 'prune', 'backfill', 'renumber', 'init', 'view')]
     [string]$Action,
     # Scope for list, check, groups, prune, backfill (a Tasks.md or a folder); the target
-    # Tasks.md or folder for add; the occurrences to renumber for renumber -Id.
+    # Tasks.md or folder for add; the occurrences to renumber for renumber -Id; the folder
+    # to create a Tasks.md in for init.
     [string]$Path,
     # Array parameters also take one delimited string, so they work under 'pwsh -File':
     # -Section, -Status, -Tag, -Id, -Tags, -AddTag, -RemoveTag split on commas (pieces
@@ -104,6 +114,12 @@ param(
     # Git ref renumber compares against to find published lines (e.g. '@{u}').
     [string]$Against,
     [switch]$SkipPromoted,
+    # view: the file is View-<Name>.md; -Title and -Description fill the H1 and intro; the
+    # query filter is -Group's tag or -Filter's lines.
+    [string]$Name,
+    [AllowEmptyString()][string]$Description,
+    [string]$Group,
+    [string]$Filter,
     # Override the vault root; used by unit tests to redirect to a temporary worktree.
     [string]$VaultRootOverride
 )
@@ -152,28 +168,25 @@ $IdList = [int[]]@(foreach ($x in (Split-Param $Id ',')) {
 $Today    = (Get-Date).ToString('yyyy-MM-dd')
 $TaskLink = '^Task-\d+(?:-|$)'   # a promoted line's link names a task doc only when it matches
 
+# Section, status, priority, and tag vocabularies come from the shared parser; a legacy
+# heading name (Sprint, Active) is read in files but not taken as an argument.
 function Get-SectionKey([string]$Name) {
-    switch (($Name -replace '[\s_-]', '').ToLowerInvariant()) {
-        'current'    { return 'Current' }
-        'blocked'    { return 'Blocked' }
-        'backlog'    { return 'Backlog' }
-        'sidequests' { return 'SideQuests' }
-        'done'       { return 'Done' }
-        'reminders'  { return 'Reminders' }
-    }
-    Fail "Unknown section '$Name'. Use one of: Current, Blocked, Backlog, SideQuests, Done, Reminders"
+    $map = Get-TaskSectionName $Name
+    if ($map.Name -and -not $map.Legacy) { return $map.Name }
+    Fail "Unknown section '$Name'. Use one of: $($TaskSectionNames -join ', ')"
 }
 
 function Get-StatusKey([string]$Name) {
     $n = $Name.ToLowerInvariant()
-    if (@('todo', 'in-progress', 'done', 'cancelled') -contains $n) { return $n }
-    Fail "Unknown status '$Name'. Use one of: todo, in-progress, done, cancelled"
+    if ($TaskStatusNames -contains $n) { return $n }
+    Fail "Unknown status '$Name'. Use one of: $($TaskStatusNames -join ', ')"
 }
 
 function Get-PriorityKey([string]$Name) {
     $n = $Name.ToLowerInvariant()
-    if (@('highest', 'high', 'medium', 'low', 'lowest', 'none') -contains $n) { return $n }
-    Fail "Unknown priority '$Name'. Use one of: highest, high, medium, low, lowest, none"
+    $names = @($TaskPriorityNames) + @('none')
+    if ($names -contains $n) { return $n }
+    Fail "Unknown priority '$Name'. Use one of: $($names -join ', ')"
 }
 
 # 'none' -> '' (clear); a yyyy-MM-dd date passes through; anything else is an error.
@@ -189,7 +202,7 @@ function Get-DateValue([string]$ParamName, [string]$Value) {
 
 function Get-TagValue([string]$Value) {
     $t = $Value.Trim().TrimStart('#')
-    if ($t -notmatch '^[\w/-]+$' -or $t -match '^\d+$') { Fail "Invalid tag '$Value'. Tags are letters, digits, _, -, / and not all digits" }
+    if (-not (Test-TaskTagName $t)) { Fail "Invalid tag '$Value'. Tags are letters, digits, _, -, / and not all digits" }
     return $t
 }
 
@@ -269,24 +282,6 @@ function Get-ScopeFiles([string]$P) {
 function Get-Model([string]$File) { return Get-TaskFile -Path $File -VaultRoot $VaultRoot }
 
 function Test-Blank([string]$Line) { return $Line.Trim() -eq '' }
-
-# Index of the first '##' heading whose canonical section is $Name, skipping frontmatter and
-# fenced blocks the way Get-TaskFile does; -1 when absent.
-function Find-SectionIndex($Lines, [string]$Name) {
-    $start = 0
-    if ($Lines.Count -gt 0 -and $Lines[0].Trim() -eq '---') {
-        for ($j = 1; $j -lt $Lines.Count; $j++) { if ($Lines[$j].Trim() -eq '---') { $start = $j + 1; break } }
-    }
-    $inFence = $false
-    for ($i = $start; $i -lt $Lines.Count; $i++) {
-        if ($Lines[$i] -match '^\s*(```|~~~)') { $inFence = -not $inFence; continue }
-        if ($inFence) { continue }
-        if ($Lines[$i] -match '^##(?!#)\s*(.*?)\s*$') {
-            if ((Get-TaskSectionName $Matches[1]).Name -eq $Name) { return $i }
-        }
-    }
-    return -1
-}
 
 # Whether items in $SectionName are separated by blank lines: the first adjacent pair of
 # task blocks in that section decides, then the first pair anywhere in the file, else $true.
@@ -526,7 +521,7 @@ function Invoke-Check {
         if ($name -match '^Task-(\d+)(?:-.*)?\.md$') {
             $n = 0
             if ([int]::TryParse($Matches[1], [ref]$n) -and -not $idNumbers.Contains($n)) {
-                $rel = _Get-RelPath $VaultRoot $d
+                $rel = Get-VaultRelativePath $VaultRoot $d
                 Add-Problem $rel $null 'OrphanDoc' "Task doc $name has no task line with ID $n"
             }
         }
@@ -562,14 +557,14 @@ function Invoke-Groups {
     $views = foreach ($v in Get-PrunedFiles -Root $VaultRoot -Filter 'View-*.md' -ExcludeFolderNames $TaskScanExcludedFolders) {
         $leaf = [System.IO.Path]::GetFileName($v)
         if ($leaf -notlike 'View-*.md') { continue }
-        [PSCustomObject]@{ Rel = (_Get-RelPath $VaultRoot $v); Text = [System.IO.File]::ReadAllText($v, $Utf8NoBom) }
+        [PSCustomObject]@{ Rel = (Get-VaultRelativePath $VaultRoot $v); Text = [System.IO.File]::ReadAllText($v, $Utf8NoBom) }
     }
 
     $names = [string[]]@($groups.Keys)
     [Array]::Sort($names, $cmp)
     $out = foreach ($n in $names) {
         $g = $groups[$n]
-        $re = [regex]::new('#group/' + [regex]::Escape($g.Name) + '(?![\w/-])', 'IgnoreCase')
+        $re = [regex]::new('#group/' + [regex]::Escape($g.Name) + '(?!' + $TaskTagChars + ')', 'IgnoreCase')
         $files = [string[]]@($g.Files)
         [Array]::Sort($files, $cmp)
         $hits = [string[]]@(foreach ($v in @($views)) { if ($re.IsMatch($v.Text)) { $v.Rel } })
@@ -592,7 +587,7 @@ function Invoke-Add {
     if ($sec -eq 'Done') { Fail 'Use -Action done or -Action cancel to put a task in Done; add takes Current, Blocked, Backlog, SideQuests, or Reminders' }
 
     $m = Get-Model $abs
-    $h = Find-SectionIndex $m.Lines $sec
+    $h = Find-TaskSection $m.Lines $sec
     if ($h -lt 0) { Fail "Section '$sec' not found in $($m.File)" }
     $lines = New-LineList $m
 
@@ -607,12 +602,12 @@ function Invoke-Add {
         return
     }
 
-    $sym = ' '
+    $sym = $TaskStatusSymbol['todo']
     if ($Status) {
         if (@($Status).Count -ne 1) { Fail '-Action add takes one -Status' }
         $st = Get-StatusKey $Status[0]
         if ($st -in 'done', 'cancelled') { Fail "Use -Action done or -Action cancel to finish a task; add takes -Status todo or in-progress" }
-        if ($st -eq 'in-progress') { $sym = '/' }
+        $sym = $TaskStatusSymbol[$st]
     }
     if ($script:Bound.ContainsKey('Text')) { Assert-OneLine 'Text' $Text }
     $task = @{
@@ -666,7 +661,7 @@ function Invoke-Update {
         if (@($Status).Count -ne 1) { Fail '-Action update takes one -Status' }
         $st = Get-StatusKey $Status[0]
         if ($st -in 'done', 'cancelled') { Fail "Use -Action done or -Action cancel to set status $st" }
-        $f.Symbol = if ($st -eq 'in-progress') { '/' } else { ' ' }
+        $f.Symbol = $TaskStatusSymbol[$st]
         $f.DoneDate = $null; $f.CancelledDate = $null
     }
     $target = $null
@@ -675,7 +670,7 @@ function Invoke-Update {
         $target = Get-SectionKey $Section[0]
         if ($target -eq 'Done') { Fail 'Use -Action done or -Action cancel to move a task to Done' }
         if ($target -eq 'Reminders') { Fail 'A task cannot move to Reminders' }
-        if ((Find-SectionIndex $m.Lines $target) -lt 0) { Fail "Section '$target' not found in $($m.File)" }
+        if ((Find-TaskSection $m.Lines $target) -lt 0) { Fail "Section '$target' not found in $($m.File)" }
         if ($t.Status -in 'done', 'cancelled' -and -not $script:Bound.ContainsKey('Status')) {
             Fail "Task $tid is $($t.Status); pass -Status todo or in-progress to move it out of Done"
         }
@@ -694,7 +689,7 @@ function Invoke-Update {
     if ($target) {
         $block = [string[]]$lines.GetRange($idx, $end - $idx + 1).ToArray()
         Remove-Block $lines $idx $block.Count
-        $h = Find-SectionIndex $lines $target
+        $h = Find-TaskSection $lines $target
         $final = Add-Block $lines $h $block (Test-BlankSeparated $m $target)
     }
     Save-Lines $m $lines
@@ -706,7 +701,7 @@ function Invoke-Finish([string]$Kind) {
     $hit = Find-Task $tid
     $m = $hit.Model; $t = $hit.Task
     if ($t.Status -in 'done', 'cancelled') { Fail "Task $tid is already $($t.Status)" }
-    if ((Find-SectionIndex $m.Lines 'Done') -lt 0) { Fail "Section 'Done' not found in $($m.File)" }
+    if ((Find-TaskSection $m.Lines 'Done') -lt 0) { Fail "Section 'Done' not found in $($m.File)" }
 
     $f = Copy-TaskFields $t
     Add-MissingStamps $f
@@ -718,14 +713,14 @@ function Invoke-Finish([string]$Kind) {
         $when = Get-DateValue 'Date' $Date
         if ($when -gt $Today) { Fail "Invalid -Date '$Date'. It is after today ($Today)" }
     }
-    if ($Kind -eq 'done') { $f.Symbol = 'x'; $f.DoneDate = $when; $f.CancelledDate = $null }
-    else                  { $f.Symbol = '-'; $f.CancelledDate = $when; $f.DoneDate = $null }
+    if ($Kind -eq 'done') { $f.Symbol = $TaskStatusSymbol['done']; $f.DoneDate = $when; $f.CancelledDate = $null }
+    else                  { $f.Symbol = $TaskStatusSymbol['cancelled']; $f.CancelledDate = $when; $f.DoneDate = $null }
 
     $lines = New-LineList $m
     $idx = $t.LineNumber - 1
     $block = [string[]](@(ConvertTo-TaskLine -Task $f) + @($t.Children))
     Remove-Block $lines $idx ($t.EndLine - $t.LineNumber + 1)
-    $h = Find-SectionIndex $lines 'Done'
+    $h = Find-TaskSection $lines 'Done'
     $at = Add-Block $lines $h $block (Test-BlankSeparated $m 'Done')
     Save-Lines $m $lines
 
@@ -943,7 +938,7 @@ function Invoke-Renumber {
             $f = Copy-TaskFields $t
             $f.Id = [string]$new
             if ($doc) {
-                $oldRel = _Get-RelPath $VaultRoot $doc
+                $oldRel = Get-VaultRelativePath $VaultRoot $doc
                 $stem = [System.IO.Path]::GetFileNameWithoutExtension($doc)
                 $newName = "Task-$new" + $stem.Substring("Task-$($t.Id)".Length) + '.md'
                 $rename = [PSCustomObject][ordered]@{ OldPath = $oldRel; NewPath = $oldRel.Substring(0, $oldRel.LastIndexOf('/') + 1) + $newName }
@@ -964,6 +959,58 @@ function Invoke-Renumber {
     Write-Json @($out.ToArray())
 }
 
+# Read a skill template as UTF-8; returns @{ Text; Eol } with the template's own line ending.
+function Get-Template([string]$FileName) {
+    $text = [System.IO.File]::ReadAllText((Join-Path $_skillDir 'templates' $FileName), $Utf8NoBom)
+    return @{ Text = $text; Eol = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" } }
+}
+
+function Invoke-Init {
+    if (-not $Path) { Fail '-Action init requires -Path' }
+    $abs = Resolve-InputPath $Path
+    if (-not (Test-Path -LiteralPath $abs -PathType Container)) { Fail "Not a folder: $Path" }
+    $file = Join-Path $abs 'Tasks.md'
+    if (Test-Path -LiteralPath $file) { Fail "Tasks.md already exists: $file" }
+    $tpl = Get-Template 'Tasks-Template.md'
+    [System.IO.File]::WriteAllText($file, $tpl.Text.Replace('{{Name}}', (Split-Path $abs -Leaf)), $Utf8NoBom)
+    Write-Json ([PSCustomObject][ordered]@{ File = (Get-VaultRelativePath $VaultRoot $file); Path = $file })
+}
+
+function Invoke-View {
+    $stem = if ($Name) { ($Name.Trim() -replace '^View-', '' -replace '\.md$', '') } else { '' }
+    if (-not $stem) { Fail '-Action view requires -Name' }
+    # Characters no file name, or no wikilink target, may contain.
+    if ($stem.IndexOfAny([char[]](@([System.IO.Path]::GetInvalidFileNameChars()) + [char[]]'/\#^[]|')) -ge 0) {
+        Fail "Invalid -Name '$Name'. Use a file-name stem such as Sprint-Weekend-2026-10-17"
+    }
+    if (-not $Title -or -not $Title.Trim()) { Fail '-Action view requires -Title' }
+    if (-not $Description -or -not $Description.Trim()) { Fail '-Action view requires -Description' }
+    Assert-OneLine 'Title' $Title
+    Assert-OneLine 'Description' $Description
+    if ([bool]$Group -eq [bool]$Filter) { Fail '-Action view takes one of -Group or -Filter' }
+    $query = if ($Group) {
+        $g = Get-TagValue ('group/' + ($Group.Trim().TrimStart('#') -replace '^group/', ''))
+        @("tags include #$g")
+    } else {
+        Split-Param $Filter '\r?\n'
+    }
+    if (-not @($query).Count) { Fail '-Filter is empty' }
+
+    $leaf = "View-$stem.md"
+    foreach ($v in Get-PrunedFiles -Root $VaultRoot -Filter 'View-*.md' -ExcludeFolderNames $TaskScanExcludedFolders) {
+        if ([System.IO.Path]::GetFileName($v) -ieq $leaf) { Fail "Task view already exists: $v" }
+    }
+    $inbox = Join-Path $VaultRoot 'Inbox'
+    if (-not (Test-Path -LiteralPath $inbox -PathType Container)) { New-Item -ItemType Directory -Path $inbox | Out-Null }
+    $file = Join-Path $inbox $leaf
+
+    $tpl = Get-Template 'View-Template.md'
+    $doc = $tpl.Text.Replace('{{Date}}', $Today).Replace('{{Title}}', $Title.Trim()).
+        Replace('{{Description}}', $Description.Trim()).Replace('{{Filter}}', (@($query) -join $tpl.Eol))
+    [System.IO.File]::WriteAllText($file, $doc, $Utf8NoBom)
+    Write-Json ([PSCustomObject][ordered]@{ File = (Get-VaultRelativePath $VaultRoot $file); Path = $file; Filter = [string[]]@($query) })
+}
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
@@ -981,6 +1028,8 @@ try {
         'prune'    { Invoke-Prune }
         'backfill' { Invoke-Backfill }
         'renumber' { Invoke-Renumber }
+        'init'     { Invoke-Init }
+        'view'     { Invoke-View }
     }
 } catch {
     Fail $_.Exception.Message

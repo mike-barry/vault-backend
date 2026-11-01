@@ -32,7 +32,8 @@
 #   Assumes no folder layout: task files are found by name anywhere under the repo root,
 #   skipping $TaskScanExcludedFolders. Lift this file into another repo together with:
 #     vault-common.ps1      - $Utf8NoBom, Format-VaultRoot, Get-VaultRoot, Resolve-VaultPath,
-#                             Get-PrunedFiles, ConvertTo-TitleSlug
+#                             Get-PrunedFiles, ConvertTo-TitleSlug, Get-VaultRelativePath,
+#                             Test-ExcludedPathSegment, Set-FileLines
 #     vault-frontmatter.ps1 - Get-FrontmatterField (it dot-sources vault-common.ps1 itself)
 #   Where a task doc is created is the caller's decision; nothing here chooses a folder.
 
@@ -40,6 +41,20 @@
 
 # Folder names never descended into when scanning for task files and task docs.
 $TaskScanExcludedFolders = @('Archive', '.git', '.claude', '.vault', '.obsidian', 'node_modules', '.venv', 'bin', 'obj')
+
+# Canonical section names: the sections that hold task lines, in queue order, then every
+# section a file may have (Reminders holds plain bullets). Get-TaskSectionName maps headings
+# onto these.
+$TaskSections     = @('Current', 'Blocked', 'Backlog', 'SideQuests', 'Done')
+$TaskSectionNames = @($TaskSections) + @('Reminders')
+
+# Status names with the checkbox symbol written for each; ConvertTo-TaskStatus also reads
+# 'X' as done, and any other symbol as 'other'.
+$TaskStatusSymbol = [ordered]@{ 'todo' = ' '; 'in-progress' = '/'; 'done' = 'x'; 'cancelled' = '-' }
+$TaskStatusNames  = [string[]]@($TaskStatusSymbol.Keys)
+
+# Characters a tag name may use (after the '#').
+$TaskTagChars = '[\w/-]'
 
 # ---------------------------------------------------------------------------
 # Field vocabulary (built from code points so this file stays ASCII)
@@ -54,6 +69,7 @@ $script:TaskPriorityEmoji = [ordered]@{
     low     = _TaskEmoji 0x1F53D
     lowest  = _TaskEmoji 0x23EC
 }
+$TaskPriorityNames = [string[]]@($script:TaskPriorityEmoji.Keys)
 # Canonical date emoji per property, in emit order.
 $script:TaskDateEmoji = [ordered]@{
     Start         = _TaskEmoji 0x1F6EB
@@ -88,8 +104,8 @@ $script:TaskRx = @{
     Depends    = [regex]([regex]::Escape($script:TaskDependsEmoji) + '️?\s*([A-Za-z0-9_-]+(?:[ ,]+[A-Za-z0-9_-]+)*)\s*$')
     OnComplete = [regex]([regex]::Escape($script:TaskOnCompleteEmoji) + '️?\s*([A-Za-z]+)\s*$')
     Recur      = [regex]([regex]::Escape($script:TaskRecurEmoji) + '️?(?:(?!' + (_TaskAlt $script:TaskAllFieldEmoji) + ').)*$')
-    TrailTag   = [regex]'(?<!\S)#([\w/-]+)\s*$'
-    Tag        = [regex]'(?<!\S)#([\w/-]+)'
+    TrailTag   = [regex]('(?<!\S)#(' + $TaskTagChars + '+)\s*$')
+    Tag        = [regex]('(?<!\S)#(' + $TaskTagChars + '+)')
     Protected  = [regex]'\[\[.*?\]\]|`[^`]*`|\]\((?:\\.|[^)\\])*\)|<[^>\s]+>|https?://\S+'
     Bold       = [regex]'^\*\*(.+?)\*\*(.*)$'
     LinkHead   = [regex]'^(\[\[[^\[\]]+\]\])(?:\s+-\s+(.*))?$'
@@ -101,14 +117,9 @@ $script:TaskRx = @{
 # Map a checkbox symbol to its status name: todo, in-progress, done, cancelled, or other.
 function ConvertTo-TaskStatus {
     param([AllowEmptyString()][string]$Symbol)
-    switch -CaseSensitive ($Symbol) {
-        ' '     { return 'todo' }
-        '/'     { return 'in-progress' }
-        'x'     { return 'done' }
-        'X'     { return 'done' }
-        '-'     { return 'cancelled' }
-        default { return 'other' }
-    }
+    if ($Symbol -ceq 'X') { return 'done' }
+    foreach ($e in $TaskStatusSymbol.GetEnumerator()) { if ($e.Value -ceq $Symbol) { return $e.Key } }
+    return 'other'
 }
 
 # Read a property from a hashtable or PSObject; $null when absent (StrictMode-safe).
@@ -123,9 +134,13 @@ function _TaskProp($Obj, [string]$Name) {
     return $null
 }
 
-# A tag token is '#' + [\w/-]+ preceded by whitespace or line start, and not all digits (so
-# 'issue #10' stays text, as Obsidian treats it).
-function _Test-TagToken([string]$Name) { return $Name -notmatch '^\d+$' }
+# True when $Name (no '#') is a valid tag name: $TaskTagChars only, and not all digits (so
+# 'issue #10' stays text, as Obsidian treats it). A tag token is '#' plus such a name,
+# preceded by whitespace or line start.
+function Test-TaskTagName {
+    param([AllowEmptyString()][string]$Name)
+    return $Name -match ('^' + $TaskTagChars + '+$') -and $Name -notmatch '^\d+$'
+}
 
 function _Find-Key($Map, [string]$Value) {
     foreach ($e in $Map.GetEnumerator()) { if ($e.Value -eq $Value) { return $e.Key } }
@@ -188,7 +203,7 @@ function ConvertFrom-TaskLine {
         if ($matched) { continue }
         # A tag between or after fields (the plugin allows it); kept as a tag.
         $mm = $script:TaskRx.TrailTag.Match($rest)
-        if ($mm.Success -and (_Test-TagToken $mm.Groups[1].Value)) {
+        if ($mm.Success -and (Test-TaskTagName $mm.Groups[1].Value)) {
             $trailTags.Add($mm.Groups[1].Value)
             $rest = $rest.Substring(0, $mm.Index); continue
         }
@@ -206,7 +221,7 @@ function ConvertFrom-TaskLine {
     foreach ($tm in $script:TaskRx.Tag.Matches($rest)) {
         $inside = $false
         foreach ($r in $protected) { if ($tm.Index -ge $r[0] -and $tm.Index -lt $r[1]) { $inside = $true; break } }
-        if ($inside -or -not (_Test-TagToken $tm.Groups[1].Value)) { continue }
+        if ($inside -or -not (Test-TaskTagName $tm.Groups[1].Value)) { continue }
         $cut = $tm.Index
         while ($cut -gt $pos -and [char]::IsWhiteSpace($rest[$cut - 1])) { $cut-- }
         [void]$sb.Append($rest.Substring($pos, $cut - $pos))
@@ -271,7 +286,8 @@ function ConvertTo-TaskLine {
     param([Parameter(Mandatory)]$Task)
     $sym = _TaskProp $Task 'Symbol'
     if ($null -eq $sym -or "$sym".Length -ne 1) {
-        $sym = switch (_TaskProp $Task 'Status') { 'in-progress' { '/' } 'done' { 'x' } 'cancelled' { '-' } default { ' ' } }
+        $st  = [string](_TaskProp $Task 'Status')
+        $sym = if ($st -and $TaskStatusSymbol.Contains($st)) { $TaskStatusSymbol[$st] } else { ' ' }
     }
     $title  = [string](_TaskProp $Task 'Title')
     $text   = [string](_TaskProp $Task 'Text')
@@ -320,13 +336,31 @@ function Get-TaskSectionName {
     return @{ Name = $null; Legacy = $false }
 }
 
-# Repo-relative path with '/' separators, or the '/'-normalized absolute path when $Path is
-# not under $Root.
-function _Get-RelPath([string]$Root, [string]$Path) {
-    $r = Format-VaultRoot $Root
-    if ($Path.StartsWith($r, [System.StringComparison]::OrdinalIgnoreCase)) { return ($Path.Substring($r.Length) -replace '\\', '/') }
-    if ((Format-VaultRoot $Path) -ieq $r) { return '' }
-    return ($Path -replace '\\', '/')
+# Index of the first line after a leading frontmatter block (0 when there is none).
+function Get-TaskBodyStart {
+    param([Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Lines)
+    if ($Lines.Count -gt 0 -and $Lines[0].Trim() -eq '---') {
+        for ($j = 1; $j -lt $Lines.Count; $j++) { if ($Lines[$j].Trim() -eq '---') { return $j + 1 } }
+    }
+    return 0
+}
+
+# 0-based index in $Lines of the first '##' heading whose canonical section (see
+# Get-TaskSectionName) is $Name, skipping frontmatter and fenced blocks the way Get-TaskFile
+# does; -1 when absent. Works on a line list mid-edit, where a loaded model's Sections are stale.
+function Find-TaskSection {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Lines,
+        [Parameter(Mandatory)][string]$Name
+    )
+    $inFence = $false
+    for ($i = (Get-TaskBodyStart $Lines); $i -lt $Lines.Count; $i++) {
+        if ($script:TaskRx.Fence.IsMatch($Lines[$i])) { $inFence = -not $inFence; continue }
+        if ($inFence) { continue }
+        $hm = $script:TaskRx.Heading.Match($Lines[$i])
+        if ($hm.Success -and (Get-TaskSectionName $hm.Groups[1].Value).Name -eq $Name) { return $i }
+    }
+    return -1
 }
 
 # Load and model one task file (see the header). -VaultRoot defaults to the git repo holding
@@ -341,7 +375,7 @@ function Get-TaskFile {
     if (-not $VaultRoot) {
         try { $VaultRoot = Get-VaultRoot -StartPath (Split-Path $abs -Parent) } catch { $VaultRoot = Split-Path $abs -Parent }
     }
-    $rel = _Get-RelPath $VaultRoot $abs
+    $rel = Get-VaultRelativePath $VaultRoot $abs
 
     $content = [System.IO.File]::ReadAllText($abs, [System.Text.Encoding]::UTF8)
     $eol = if ($content.Contains("`r`n")) { "`r`n" } else { "`n" }
@@ -356,18 +390,12 @@ function Get-TaskFile {
     $tasks     = [System.Collections.Generic.List[object]]::new()
     $reminders = [System.Collections.Generic.List[object]]::new()
     $problems  = [System.Collections.Generic.List[object]]::new()
-    $taskSections = @('Current', 'Blocked', 'Backlog', 'SideQuests', 'Done')
     function AddProblem([int]$n, [string]$msg) { $problems.Add([PSCustomObject]@{ LineNumber = $n; Message = $msg }) }
 
-    # Skip a leading frontmatter block.
-    $start = 0
-    if ($lines.Count -gt 0 -and $lines[0].Trim() -eq '---') {
-        for ($j = 1; $j -lt $lines.Count; $j++) { if ($lines[$j].Trim() -eq '---') { $start = $j + 1; break } }
-    }
-
+    # Start after a leading frontmatter block.
     $current = $null
     $inFence = $false
-    for ($i = $start; $i -lt $lines.Count; $i++) {
+    for ($i = (Get-TaskBodyStart $lines); $i -lt $lines.Count; $i++) {
         $line = $lines[$i]
         $ln   = $i + 1
         if ($script:TaskRx.Fence.IsMatch($line)) { $inFence = -not $inFence; continue }
@@ -392,7 +420,7 @@ function Get-TaskFile {
             elseif ($line -match '^[-*+]\s+(.*)$') { $reminders.Add([PSCustomObject]@{ LineNumber = $ln; Text = $Matches[1] }) }
             continue
         }
-        if (-not $task -or $taskSections -notcontains $current.Name) { continue }
+        if (-not $task -or $TaskSections -notcontains $current.Name) { continue }
 
         # Children: the following indented or blank lines, trailing blanks trimmed off.
         $k = $i + 1
@@ -423,30 +451,9 @@ function Get-TaskFile {
     }
 }
 
-# Write a whole file as UTF-8 without BOM: lines joined by $LineEnding plus a trailing one
-# (an empty array writes an empty file). The only writer the task verbs use; see the
-# surgical-edit contract in the header.
-function Set-FileLines {
-    param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Lines,
-        [ValidateSet("`n", "`r`n")][string]$LineEnding = "`n"
-    )
-    $text = if ($Lines.Count) { ($Lines -join $LineEnding) + $LineEnding } else { '' }
-    [System.IO.File]::WriteAllText($Path, $text, $Utf8NoBom)
-}
-
 # ---------------------------------------------------------------------------
 # Discovery and identity
 # ---------------------------------------------------------------------------
-
-# True when any segment of $RelPath is in $Names (case-insensitive).
-function _Test-ExcludedSegment([string]$RelPath, [string[]]$Names) {
-    foreach ($seg in ($RelPath -split '[/\\]')) {
-        if ($seg -and @($Names | Where-Object { $_ -ieq $seg }).Count) { return $true }
-    }
-    return $false
-}
 
 # Every Tasks.md under the repo root, or under -Path (repo-relative or absolute), skipping
 # any folder named in $TaskScanExcludedFolders or -ExcludeFolders. -IncludeArchive walks
@@ -463,7 +470,7 @@ function Get-TaskFiles {
     $root = $VaultRoot
     if ($Path) {
         $root = Resolve-VaultPath -VaultRoot (Format-VaultRoot $VaultRoot) -Path $Path
-        if (_Test-ExcludedSegment (_Get-RelPath $VaultRoot $root) $ex) { return [string[]]@() }
+        if (Test-ExcludedPathSegment (Get-VaultRelativePath $VaultRoot $root) $ex) { return [string[]]@() }
     }
     return [string[]]@(Get-PrunedFiles -Root $root -Filter 'Tasks.md' -ExcludeFolderNames $ex |
         Where-Object { [System.IO.Path]::GetFileName($_) -eq 'Tasks.md' })

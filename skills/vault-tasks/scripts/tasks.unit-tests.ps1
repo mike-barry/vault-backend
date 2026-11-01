@@ -982,6 +982,110 @@ Run-Test 'renumber: promoted line keeps its title and reports DocRename; -SkipPr
 }
 
 # ===========================================================================
+Write-Host "`n-- init --"
+
+$tplDir   = Join-Path $PSScriptRoot '..' 'templates'
+$tasksTpl = [System.IO.File]::ReadAllText((Join-Path $tplDir 'Tasks-Template.md'))
+$viewEol  = if ([System.IO.File]::ReadAllText((Join-Path $tplDir 'View-Template.md')).Contains("`r`n")) { "`r`n" } else { "`n" }
+
+Run-Test 'init: Tasks.md from the template, named for the folder; JSON File and Path' {
+    New-TestFile 'Projects/My-Project/.placeholder'
+    $r = Invoke-Tasks 'init' @{ Path = 'Projects/My-Project' }
+    Expect ($r.Code -eq 0) $r.Err
+    Expect-File 'Projects/My-Project/Tasks.md' ($tasksTpl.Replace('{{Name}}', 'My-Project'))
+    $doc = Get-TestFileContent 'Projects/My-Project/Tasks.md'
+    Expect ($doc.Contains("`n# My-Project Tasks") -and -not $doc.Contains('{{') -and -not $doc.Contains('scope:')) "doc: $doc"
+    Expect (Test-NoBom 'Projects/My-Project/Tasks.md') 'BOM'
+    Expect ($r.Json.File -eq 'Projects/My-Project/Tasks.md' -and $r.Json.Path -eq (Join-Path $testRoot 'Projects' 'My-Project' 'Tasks.md')) $r.Out
+    $m = Invoke-Tasks 'check' @{ Path = 'Projects/My-Project' }
+    Expect ($m.Code -eq 0 -and @($m.Json).Count -eq 0) "check on the new file: $($m.Out) $($m.Err)"
+    $a = Invoke-Tasks 'add' @{ Path = 'Projects/My-Project'; Title = 'first'; Section = 'Current' }
+    Expect ($a.Code -eq 0 -and $a.Json.Section -eq 'Current') "add into the new file: $($a.Err)"
+    Ok
+}
+
+Run-Test 'init: an area folder by absolute path with backslashes; pwsh -File' {
+    New-TestFile 'Areas/My-Area/.placeholder'
+    $r = Invoke-TasksFile 'init' @('-Path', ((Join-Path $testRoot 'Areas' 'My-Area') -replace '/', '\'))
+    Expect ($r.Code -eq 0) $r.Err
+    Expect-File 'Areas/My-Area/Tasks.md' ($tasksTpl.Replace('{{Name}}', 'My-Area'))
+    Ok
+}
+
+Run-Test 'init: errors (no -Path, missing folder, a file, Tasks.md exists)' {
+    New-TestFile 'Projects/Has/Tasks.md' '# Has Tasks'
+    Expect-Error (Invoke-Tasks 'init') 'requires -Path'
+    Expect-Error (Invoke-Tasks 'init' @{ Path = 'Projects/NoSuch' }) 'Path not found'
+    Expect-Error (Invoke-Tasks 'init' @{ Path = 'Projects/Has/Tasks.md' }) 'Not a folder'
+    Expect-Error (Invoke-Tasks 'init' @{ Path = 'Projects/Has' }) 'already exists'
+    Expect-File 'Projects/Has/Tasks.md' '# Has Tasks'
+    Ok
+}
+
+# ===========================================================================
+Write-Host "`n-- view --"
+
+Run-Test 'view: -Group writes Inbox/View-<Name>.md from the template; groups finds it' {
+    New-TestFile 'Areas/A/Tasks.md' (Text @('## 🔥 Current', '', '- [ ] a #group/weekend-2026-10-17 | 🆔 1 ➕ 2026-01-01'))
+    $r = Invoke-Tasks 'view' @{ Name = 'Sprint-Weekend-2026-10-17'; Title = 'Sprint Weekend 2026-10-17'; Description = 'Errands for the weekend of $1 & more.'; Group = 'weekend-2026-10-17' }
+    Expect ($r.Code -eq 0) $r.Err
+    Expect-File 'Inbox/View-Sprint-Weekend-2026-10-17.md' (Text @(
+        '---'
+        "doc.created: $today"
+        'doc.type: View'
+        '---'
+        '# Sprint Weekend 2026-10-17'
+        ''
+        'Errands for the weekend of $1 & more.'
+        ''
+        '```tasks'
+        'filename includes Tasks.md'
+        'tags include #group/weekend-2026-10-17'
+        'not done'
+        'group by folder'
+        'sort by priority'
+        '```'
+    ) $viewEol)
+    Expect (Test-NoBom 'Inbox/View-Sprint-Weekend-2026-10-17.md') 'BOM'
+    Expect ($r.Json.File -eq 'Inbox/View-Sprint-Weekend-2026-10-17.md' -and $r.Json.Path -eq (Join-Path $testRoot 'Inbox' 'View-Sprint-Weekend-2026-10-17.md')) $r.Out
+    Expect ((@($r.Json.Filter) -join '|') -eq 'tags include #group/weekend-2026-10-17') $r.Out
+    $g = Invoke-Tasks 'groups'
+    Expect ((@($g.Json[0].Views) -join ',') -eq 'Inbox/View-Sprint-Weekend-2026-10-17.md') $g.Out
+    Ok
+}
+
+Run-Test 'view: -Group with #group/ prefix, -Name with View- and .md; -Filter lines via pwsh -File' {
+    New-TestFile 'Inbox/.placeholder'
+    $r = Invoke-Tasks 'view' @{ Name = 'View-X.md'; Title = 'X'; Description = 'D.'; Group = '#group/x' }
+    Expect ($r.Code -eq 0 -and $r.Json.File -eq 'Inbox/View-X.md' -and (@($r.Json.Filter) -join '|') -eq 'tags include #group/x') "$($r.Out) $($r.Err)"
+    $f = Invoke-TasksFile 'view' @('-Name', 'Home', '-Title', 'Home', '-Description', 'Open home tasks.', '-Filter', "path includes Areas/Home`n  tags include #errand  `n")
+    Expect ($f.Code -eq 0) $f.Err
+    $doc = Get-TestFileContent 'Inbox/View-Home.md'
+    Expect ($doc.Contains((@('filename includes Tasks.md', 'path includes Areas/Home', 'tags include #errand', 'not done') -join $viewEol))) "doc: $doc"
+    Ok
+}
+
+Run-Test 'view: errors (missing values, both or neither filter, bad name or group, exists)' {
+    New-TestFile 'Tasks/View-Taken.md' '# Taken'
+    New-TestFile 'Archive/View-Old.md' '# Old'
+    $base = @{ Name = 'N'; Title = 'T'; Description = 'D.' }
+    function With([hashtable]$Extra) { $h = $base.Clone(); foreach ($k in $Extra.Keys) { $h[$k] = $Extra[$k] }; $h }
+    Expect-Error (Invoke-Tasks 'view' @{ Title = 'T'; Description = 'D.'; Group = 'g' }) 'requires -Name'
+    Expect-Error (Invoke-Tasks 'view' @{ Name = 'N'; Description = 'D.'; Group = 'g' }) 'requires -Title'
+    Expect-Error (Invoke-Tasks 'view' @{ Name = 'N'; Title = 'T'; Group = 'g' }) 'requires -Description'
+    Expect-Error (Invoke-Tasks 'view' $base) 'one of -Group or -Filter'
+    Expect-Error (Invoke-Tasks 'view' (With @{ Group = 'g'; Filter = 'not done' })) 'one of -Group or -Filter'
+    Expect-Error (Invoke-Tasks 'view' (With @{ Name = 'a/b'; Group = 'g' })) 'Invalid -Name'
+    Expect-Error (Invoke-Tasks 'view' (With @{ Group = 'a b' })) 'Invalid tag'
+    Expect-Error (Invoke-Tasks 'view' (With @{ Title = "two`nlines"; Group = 'g' })) 'single line'
+    Expect-Error (Invoke-Tasks 'view' (With @{ Name = 'taken'; Group = 'g' })) 'already exists'
+    $o = Invoke-Tasks 'view' (With @{ Name = 'Old'; Group = 'g' })
+    Expect ($o.Code -eq 0 -and $o.Json.File -eq 'Inbox/View-Old.md') "an archived view does not block: $($o.Out) $($o.Err)"
+    Expect-Error (Invoke-Tasks 'view' (With @{ Name = 'Old'; Group = 'g' })) 'already exists'
+    Ok
+}
+
+# ===========================================================================
 Write-Host "`n-- real files --"
 
 Run-Test 'smoke: list and check over copies of every real Tasks.md' {

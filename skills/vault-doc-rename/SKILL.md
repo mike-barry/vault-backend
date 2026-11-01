@@ -10,18 +10,18 @@ Renames or moves a vault markdown file and updates every `[[wikilink]]` and `![[
 This skill has two entry points:
 
 - **User-invoked**: the user names an old file and a new name (or path).
-- **Programmatic**: called by `vault-doc-archive` with fully-resolved `OldPath` and `NewPath`. Skip to [[#Apply]], no confirmation needed.
+- **Programmatic**: called by another vault skill (`vault-doc-archive`, `vault-tasks`, `vault-sync`) with fully-resolved `OldPath` and `NewPath`. Skip to [[#Apply]], no confirmation needed.
 
 ## Command Shape
 
 ```bash
-vault move --path <vault-relative-source> --destination <vault-relative-dest> --output json
+vault move --vault <name> --path <vault-relative-source> --destination <vault-relative-dest> --output json
 ```
 
 A call without `--apply` runs the plan and validate phases, mutates nothing, and answers `"applied": false`. Adding `--apply` performs the move.
 
 - `--output json` - always pass it, and parse the result as JSON.
-- `--vault` - omit it, so the call operates on the configured default vault.
+- `--vault` - always pass the name `scripts/resolve-vault.ps1` returns (`pwsh -NonInteractive -NoProfile -File .claude/skills/vault-doc-rename/scripts/resolve-vault.ps1`, JSON `Vault`), so the move lands in this repo even when it is a clone other than the CLI's default vault. Resolve it once per session. A non-zero exit means the CLI has no vault registered at this repo's path: report the error verbatim and stop, since the move would otherwise run in a different vault.
 - `--kind` - omit it. It asserts `note` against `folder` as a fail-fast, and a doc rename is always a note.
 
 There is no `--force` and no override of any kind. Every call exits non-zero on refusal and prints a `{code, message, data}` object (see [[#Error Handling]]).
@@ -48,7 +48,7 @@ The destination carries the source's `.md` extension, and nothing is inferred or
 
 Two further constraints refuse the call outright:
 
-- The destination's parent folder must already exist. A move creates no folder, so create a new destination folder first with `vault create --path <folder> --kind folder`.
+- The destination's parent folder must already exist. A move creates no folder, so create a new destination folder first with `vault create --vault <name> --path <folder> --kind folder`.
 - The basename must satisfy the vault's name grammar, which is groups of ASCII letters, digits, `+` and `&`, joined by single dashes, starting with an upper-case letter or a digit. Normalize the user's wording into that shape when you compose the destination, so `my notes` becomes `My-Notes.md`.
 
 If the user asks for a different extension (`Notes.md` to `Notes.txt`), that is a file-type conversion, which `move` refuses and has no override for. Tell them the command cannot change what a file is, and stop.
@@ -69,7 +69,7 @@ Call `vault move` without `--apply` before confirming. This returns the same rep
 
 Every validate-phase refusal fires on a preview exactly as it would on a real call, so a clean preview is also a validation pass.
 
-Programmatic entry: skip the preview, because `vault-doc-archive` has already resolved and confirmed the operation.
+Programmatic entry: skip the preview, because the calling skill has already resolved and confirmed the operation.
 
 ## Confirm
 
@@ -80,7 +80,7 @@ Present the operation to the user (old path, new name or path, and the preview f
 Call `vault move` again with the same `--path` and `--destination`, adding `--apply`:
 
 ```bash
-vault move --path <source> --destination <dest> --apply --output json
+vault move --vault <name> --path <source> --destination <dest> --apply --output json
 ```
 
 Under a single write lock, the command resolves the source's shape, validates the destination, rewrites every reference, moves the file, and prints the JSON summary. The destination's parent is not created, and an absent one is refused (see [[#Resolve Dest]]).
@@ -106,7 +106,7 @@ A refusal exits non-zero and prints `{code, message, data}`. A basename collisio
 
 - `path_not_found` - nothing at the source path, which happens when it moved between [[#Resolve Source]] and the call. Report and re-resolve.
 - `already_exists` - the destination path is occupied. Report and ask the user for a different destination.
-- `parent_missing` - the destination's parent folder does not exist, and `data.parent` names it. Create it with `vault create --path <parent> --kind folder` and retry, or ask the user first if the folder's existence is itself the question.
+- `parent_missing` - the destination's parent folder does not exist, and `data.parent` names it. Create it with `vault create --vault <name> --path <parent> --kind folder` and retry, or ask the user first if the folder's existence is itself the question.
 - `invalid_path` - the path names no note, because the destination is missing `.md` or carries a different extension. When `data.suggested` is present it names the value that works, so retry once with it. A genuinely different extension is a conversion, so stop and explain (see [[#Resolve Dest]]).
 - `invalid_name` - the basename is outside the vault's name grammar, and `data.suggested` carries an accepted spelling. Use it, or confirm the corrected name with the user when the suggestion changes meaning. Nothing moved.
 - `wrong_kind` - a `--kind` assertion disagreed with the operand's shape. This skill omits `--kind`, so treat it as a bug in the call you built.

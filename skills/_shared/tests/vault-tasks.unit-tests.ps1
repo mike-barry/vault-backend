@@ -167,6 +167,23 @@ Assert-That 'link, &, /, MCP and long tail' ($long -ceq 'Task-5-Wire-Vault-MCP-S
 Assert-That 'title part capped at 60 chars' (($long.Length - 'Task-5-'.Length) -le 60)
 Assert-That 'empty title yields bare id' ((ConvertTo-TaskDocName 3 '**~~**') -ceq 'Task-3')
 
+# ---- Vocabulary and section finder -----------------------------------------
+Write-Host "`nVocabulary / Find-TaskSection"
+
+Assert-That 'section names: task sections then Reminders' (($TaskSectionNames -join ',') -ceq 'Current,Blocked,Backlog,SideQuests,Done,Reminders') ($TaskSectionNames -join ',')
+Assert-That 'status names' (($TaskStatusNames -join ',') -ceq 'todo,in-progress,done,cancelled') ($TaskStatusNames -join ',')
+Assert-That 'priority names' (($TaskPriorityNames -join ',') -ceq 'highest,high,medium,low,lowest') ($TaskPriorityNames -join ',')
+Assert-That 'status symbols round-trip' (@($TaskStatusNames | Where-Object { (ConvertTo-TaskStatus $TaskStatusSymbol[$_]) -ne $_ }).Count -eq 0)
+Assert-That 'tag name: letters, digits, _, -, /' (Test-TaskTagName 'group/weekend-2026_10')
+Assert-That 'tag name: all digits is not a tag' (-not (Test-TaskTagName '10'))
+Assert-That 'tag name: other characters are not a tag' (-not (Test-TaskTagName 'a.b') -and -not (Test-TaskTagName ''))
+
+$secLines = @('---', '## Current', '---', '# T', '```', '## Done', '```', '## 🔥 Sprint', '### Backlog', '## ✅ Done')
+Assert-That 'finds a heading after frontmatter and outside fences' ((Find-TaskSection $secLines 'Done') -eq 9) (Find-TaskSection $secLines 'Done')
+Assert-That 'a legacy heading counts as its canonical section' ((Find-TaskSection $secLines 'Current') -eq 7) (Find-TaskSection $secLines 'Current')
+Assert-That 'a ### heading and a missing section give -1' ((Find-TaskSection $secLines 'Backlog') -eq -1)
+Assert-That 'empty lines give -1' ((Find-TaskSection @() 'Done') -eq -1)
+
 # ---- File-based tests ------------------------------------------------------
 $vaultRoot = Get-VaultRoot $PSScriptRoot
 $ctx          = Initialize-TestWorktree -VaultRoot $vaultRoot -FolderName '.vault-tasks-lib-tests'
@@ -263,13 +280,7 @@ Run-Test 'file model: every real Tasks.md parses with no unexpected nulls' {
     $ok
 }
 
-Write-Host "`nSet-FileLines"
-
-Run-Test 'Set-FileLines preserves CRLF and writes no BOM' {
-    $p = Join-Path $testRoot 'out.md'
-    Set-FileLines -Path $p -Lines @('a', '- [ ] b') -LineEnding "`r`n"
-    (Get-TestFileContent 'out.md') -ceq "a`r`n- [ ] b`r`n" -and (Test-NoBom 'out.md')
-}
+Write-Host "`nRound trip (Get-TaskFile + Set-FileLines)"
 
 Run-Test 'Set-FileLines round-trips a loaded file byte-for-byte' {
     $content = ($fixture -join "`r`n") + "`r`n"

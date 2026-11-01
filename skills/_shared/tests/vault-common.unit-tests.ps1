@@ -80,6 +80,46 @@ try {
     Remove-Item -Recurse -Force $walk -ErrorAction SilentlyContinue
 }
 
+# ---- Get-VaultRelativePath -------------------------------------------------
+Write-Host "`nGet-VaultRelativePath"
+
+$root = Join-Path ([System.IO.Path]::GetTempPath()) 'vault-rel'
+$got = Get-VaultRelativePath $root (Join-Path $root 'Areas' 'A' 'Tasks.md')
+Assert-That 'path under the root is relative with /' ($got -ceq 'Areas/A/Tasks.md') $got
+$got = Get-VaultRelativePath ($root + '/') (Join-Path $root.ToUpperInvariant() 'X.md')
+Assert-That 'root with a trailing separator; prefix match ignores case' ($got -ceq 'X.md') $got
+Assert-That 'the root itself is empty' ((Get-VaultRelativePath $root $root) -eq '') (Get-VaultRelativePath $root $root)
+$outside = Join-Path ([System.IO.Path]::GetTempPath()) 'elsewhere' 'Y.md'
+$got = Get-VaultRelativePath $root $outside
+Assert-That 'path outside the root is absolute with /' ($got -ceq ($outside -replace '\\', '/')) $got
+$got = Get-VaultRelativePath $root ($root + '-sibling')
+Assert-That 'a sibling sharing the prefix is not under the root' ($got -ceq (($root + '-sibling') -replace '\\', '/')) $got
+
+# ---- Test-ExcludedPathSegment ----------------------------------------------
+Write-Host "`nTest-ExcludedPathSegment"
+
+Assert-That 'a matching segment excludes, ignoring case'  (Test-ExcludedPathSegment 'Projects/P/archive/Tasks.md' @('Archive', '.git'))
+Assert-That 'either separator splits'                     (Test-ExcludedPathSegment 'Projects\node_modules\x' @('node_modules'))
+Assert-That 'a partial segment does not match'            (-not (Test-ExcludedPathSegment 'Projects/Archived/Tasks.md' @('Archive')))
+Assert-That 'empty path and no names do not match'        (-not (Test-ExcludedPathSegment '' @('Archive')) -and -not (Test-ExcludedPathSegment 'Archive/x'))
+
+# ---- Set-FileLines ---------------------------------------------------------
+Write-Host "`nSet-FileLines"
+
+$out = Join-Path ([System.IO.Path]::GetTempPath()) "vault-common-lines-$(Get-Random).md"
+try {
+    Set-FileLines -Path $out -Lines @('a', '- [ ] b') -LineEnding "`r`n"
+    $bytes = [System.IO.File]::ReadAllBytes($out)
+    Assert-That 'preserves CRLF with a trailing line ending' ([System.IO.File]::ReadAllText($out) -ceq "a`r`n- [ ] b`r`n")
+    Assert-That 'writes no BOM' (-not ($bytes.Length -ge 3 -and $bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191))
+    Set-FileLines -Path $out -Lines @('x', '')
+    Assert-That 'LF by default; an empty last line is kept' ([System.IO.File]::ReadAllText($out) -ceq "x`n`n")
+    Set-FileLines -Path $out -Lines @()
+    Assert-That 'an empty array writes an empty file' ((Get-Item $out).Length -eq 0)
+} finally {
+    Remove-Item $out -ErrorAction SilentlyContinue
+}
+
 # ---- ConvertTo-TitleSlug ---------------------------------------------------
 Write-Host "`nConvertTo-TitleSlug"
 
